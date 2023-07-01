@@ -15,8 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var portCounter int
-var mu sync.Mutex
+var (
+	portCounter int
+	mu          sync.Mutex
+)
 
 func NewRedisClient(port int) *redis.Client {
 	return redis.NewClient(&redis.Options{
@@ -29,10 +31,9 @@ func NewRedisClient(port int) *redis.Client {
 }
 
 func uniquePort() int {
-	unique := DefaultPort
 	mu.Lock()
 	portCounter++
-	unique += portCounter
+	unique := DefaultPort + portCounter
 	mu.Unlock()
 	return unique
 }
@@ -41,23 +42,16 @@ func connect(port int) (net.Conn, error) {
 	attempts := 0
 
 	for {
-		var err error
-		var conn net.Conn
-
-		conn, err = net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
 		if err == nil {
 			return conn, nil
 		}
 
-		if isTimeout(err) {
+		if isTimeout(err) || attempts > 10 {
 			return nil, err
 		}
 
-		if attempts > 10 {
-			return nil, err
-		}
-
-		attempts += 1
+		attempts++
 		time.Sleep(10 * time.Millisecond)
 	}
 }

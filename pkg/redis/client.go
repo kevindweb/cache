@@ -1,33 +1,12 @@
 package redis
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
-)
-
-const (
-	DialTimeout   time.Duration = time.Second * 2
-	ConnRetryWait time.Duration = time.Millisecond * 10
-
-	MaxBatch int = 10
-
-	DefaultNetwork string = "tcp"
-)
-
-const (
-	ErrorType string = "err"
-)
-
-const (
-	InvalidAddrErr string = "address host:port are invalid"
-	EmptyParamErr  string = "parameters cannot be empty on request"
-	EmptyResErr    string = "empty response back from %s request"
-	EmptyResArgErr string = "empty argument from %s request"
-
-	ClientUninitializedErr string = "client was not initialized"
-	ClientInitTimeoutErr   string = "timed out dialing %s for %s"
 )
 
 type Client struct {
@@ -54,12 +33,13 @@ func NewClient(host string, port int) (*Client, error) {
 		conn: conn,
 	}
 
+	c.initChannels()
+	c.start()
+
 	if err := c.Ping(); err != nil {
 		return nil, err
 	}
 
-	c.initChannels()
-	// go c.scheduler()
 	return c, nil
 }
 
@@ -89,6 +69,7 @@ func connectWithTimeout(addr string, timeout time.Duration) (net.Conn, error) {
 
 func (c *Client) initChannels() {
 	c.shutdown = make(chan bool, 1)
+	c.requests = make(chan clientReq, MaxRequestBatch)
 }
 
 func (c *Client) Ping() error {
@@ -212,20 +193,30 @@ func (c *Client) validateClient() error {
 	return nil
 }
 
-// func createSimpleString(msg string) string {
-// 	var (
-// 		msgLength = strconv.Itoa(len(msg))
-// 		builder   strings.Builder
-// 	)
-// 	builder.WriteByte(BulkString)
-// 	builder.WriteString(msgLength)
-// 	builder.WriteString(NewLine)
-// 	builder.WriteString(msg)
-// 	builder.WriteString(NewLine)
-// 	return builder.String()
-// }
+func createMessage(args []string) []byte {
+	var (
+		builder bytes.Buffer
+	)
 
-func (c *Client) TearDown() error {
+	if len(args) == 0 {
+		return []byte{}
+	}
+
+	builder.WriteByte(Array)
+	builder.WriteString(strconv.Itoa(len(args)))
+	builder.WriteString(NewLine)
+	for _, arg := range args {
+		builder.WriteByte(BulkString)
+		msgLength := strconv.Itoa(len(arg))
+		builder.WriteString(msgLength)
+		builder.WriteString(NewLine)
+		builder.WriteString(arg)
+		builder.WriteString(NewLine)
+	}
+	return builder.Bytes()
+}
+
+func (c *Client) Stop() error {
 	err := c.conn.Close()
 	if err != nil {
 		return err
@@ -233,6 +224,79 @@ func (c *Client) TearDown() error {
 
 	c.shutdown <- true
 	return nil
+}
+
+func (c *Client) start() {
+	go c.scheduler()
+}
+
+func (c *Client) scheduler() {
+	var (
+		err error
+	)
+	for {
+		select {
+		case <-c.shutdown:
+			return
+		case req := <-c.requests:
+			data := createMessage(req.req)
+			_, err = c.conn.Write(data)
+			if err != nil {
+				req.res <- []string{string(Error) + err.Error()}
+				continue
+			}
+
+			timeout := time.Second * 1
+			response, err := readFromConnection(c.conn, timeout)
+			if err != nil {
+				if !isTimeout(err) {
+					req.res <- []string{string(Error) + err.Error()}
+					return
+				}
+			}
+
+			fmt.Println("Response:", string(response))
+
+			req.res <- []string{PONG}
+		}
+	}
+}
+
+func readFromConnection(conn net.Conn, timeout time.Duration) ([]byte, error) {
+	response := make([]byte, 0)
+
+	// Set read deadline based on the provided timeout
+	err := conn.SetReadDeadline(time.Now().Add(timeout))
+	if err != nil {
+		return response, err
+	}
+
+	for {
+		// Read a chunk of data from the connection
+		buffer := make([]byte, 1024) // Adjust the buffer size based on your needs
+		n, err := conn.Read(buffer)
+		if err != nil {
+			return response, err
+		}
+
+		// Append the read data to the response
+		response = append(response, buffer[:n]...)
+
+		// Break the loop if no more data is available
+		if n == 0 {
+			break
+		}
+	}
+
+	return response, nil
+}
+
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	netErr, ok := err.(net.Error)
+	return ok && netErr.Timeout()
 }
 
 // func (c *Client) scheduler() {

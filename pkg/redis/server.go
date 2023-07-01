@@ -2,7 +2,9 @@ package redis
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/tidwall/evio"
@@ -11,73 +13,51 @@ import (
 type request struct {
 	req string
 	out []byte
+	kv  map[string]string
 }
-
-const (
-	PONG string = "PONG"
-	OK   string = "OK"
-
-	PING string = "ping"
-	ECHO string = "echo"
-	GET  string = "get"
-	DEL  string = "del"
-	SET  string = "set"
-
-	Array           byte   = '*'
-	Error           byte   = '-'
-	BulkString      byte   = '$'
-	CarraigeReturn  byte   = '\r'
-	CharacterLength int    = 1
-	NewLine         string = "\r\n"
-	NewLineLen      int    = 2
-
-	Host string = "localhost"
-	Port string = "6379"
-
-	ArgLength  int = 10
-	BufferSize int = 256
-)
-
-var (
-	m map[string]string
-
-	defaultRequest = &request{}
-	arguments      = make([]string, ArgLength)
-
-	errBuffer = bytes.NewBuffer(make([]byte, BufferSize))
-	msgBuffer = bytes.NewBuffer(make([]byte, BufferSize))
-)
 
 type Server struct {
+	Address  string
+	shutdown bool
+	log      *log.Logger
+	request  *request
 }
 
-func NewServer(host string, port int) {
-	var events evio.Events
-	events.Data = eventHandler
-	address := fmt.Sprintf("tcp://%s:%d", host, port)
-	if err := evio.Serve(events, address); err != nil {
-		panic(err.Error())
+func NewServer(host string, port int) (*Server, error) {
+	if host == "" || port == 0 {
+		return nil, errors.New(InvalidAddrErr)
 	}
+
+	return &Server{
+		Address: fmt.Sprintf("%s://%s:%d", DefaultNetwork, host, port),
+		log:     &log.Logger{},
+		request: &request{
+			kv: map[string]string{},
+		},
+	}, nil
 }
 
-var shutdown bool
-
-func TearDown() error {
-	shutdown = true
-	return nil
+func (s *Server) Start() error {
+	var events evio.Events
+	events.Data = s.eventHandler
+	return evio.Serve(events, s.Address)
 }
 
-func eventHandler(_ evio.Conn, in []byte) (out []byte, action evio.Action) {
-	if shutdown {
+func (s *Server) Stop() {
+	s.shutdown = true
+}
+
+func (s *Server) eventHandler(_ evio.Conn, in []byte) (out []byte, action evio.Action) {
+	if s.shutdown {
 		action = evio.Shutdown
 		return
 	}
 
-	defaultRequest.req = string(in)
-	if err := defaultRequest.process(); err != nil {
+	s.request.req = string(in)
+	if err := s.request.process(); err != nil {
 		out = processErr(err)
 	} else {
-		out = defaultRequest.out
+		out = s.request.out
 	}
 
 	return
@@ -130,14 +110,12 @@ func (r *request) processArray() error {
 
 func (r *request) parseArguments(numArgs int) ([]string, error) {
 	var (
-		err      error
-		argument string
-		n        = 4
-		empty    = []string{}
-	)
-	if numArgs > len(arguments) {
+		err       error
+		argument  string
+		n         = 4
+		empty     = []string{}
 		arguments = make([]string, numArgs)
-	}
+	)
 
 	for i := 0; i < numArgs; i++ {
 		argument, n, err = r.processArg(n)
@@ -158,21 +136,21 @@ func (r *request) parseArguments(numArgs int) ([]string, error) {
 }
 
 func (r *request) setResponse(key, value string) {
-	if m == nil {
-		m = map[string]string{}
+	if r.kv == nil {
+		r.kv = map[string]string{}
 	}
 
-	m[key] = value
+	r.kv[key] = value
 	r.processSimpleString(OK)
 }
 
 func (r *request) getResponse(key string) {
-	val := m[key]
+	val := r.kv[key]
 	r.processSimpleString(val)
 }
 
 func (r *request) delResponse(key string) {
-	delete(m, key)
+	delete(r.kv, key)
 	r.processSimpleString(OK)
 }
 
@@ -211,8 +189,8 @@ func (r *request) findNumber(start int) (int, int, error) {
 func (r *request) processSimpleString(msg string) {
 	var (
 		msgLength = strconv.Itoa(len(msg))
+		msgBuffer bytes.Buffer
 	)
-	msgBuffer.Reset()
 	msgBuffer.WriteByte(BulkString)
 	msgBuffer.WriteString(msgLength)
 	msgBuffer.WriteString(NewLine)
@@ -223,7 +201,8 @@ func (r *request) processSimpleString(msg string) {
 
 func processErr(err error) []byte {
 	var (
-		msg = err.Error()
+		msg       = err.Error()
+		errBuffer bytes.Buffer
 	)
 	errBuffer.Reset()
 	errBuffer.WriteByte(Error)

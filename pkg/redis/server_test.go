@@ -2,8 +2,10 @@ package redis
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,51 +14,77 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func NewRedisClient() *redis.Client {
+// import (
+// 	"fmt"
+// 	"io"
+// 	"math/rand"
+// 	"net"
+// 	"testing"
+// 	"time"
+
+// 	"github.com/go-redis/redis"
+// 	"github.com/google/go-cmp/cmp"
+// 	"github.com/stretchr/testify/require"
+// )
+
+var portCounter int
+var mu sync.Mutex
+
+func NewRedisClient(port int) *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:        "localhost:6379",
+		Addr:        fmt.Sprintf("localhost:%d", port),
 		DialTimeout: 1 * time.Second,
-		Dialer:      connect,
+		Dialer: func() (net.Conn, error) {
+			return connect(port)
+		},
 	})
 }
 
-func connect() (net.Conn, error) {
+func uniquePort() int {
+	unique := DefaultPort
+	mu.Lock()
+	portCounter++
+	unique += portCounter
+	mu.Unlock()
+	return unique
+}
+
+func connect(port int) (net.Conn, error) {
 	attempts := 0
 
 	for {
 		var err error
 		var conn net.Conn
 
-		conn, err = net.Dial("tcp", "localhost:6379")
+		conn, err = net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
 		if err == nil {
 			return conn, nil
 		}
 
-		// Already a timeout
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if isTimeout(err) {
 			return nil, err
 		}
 
-		// 50 * 100ms = 5s
 		if attempts > 10 {
 			return nil, err
 		}
 
 		attempts += 1
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-// Tests 'ECHO'
 func TestEcho(t *testing.T) {
 	t.Parallel()
-	err := testEcho()
+	port, close := setup(t)
+	defer close()
+	client := NewRedisClient(port)
+
+	err := testEcho(client)
 	require.NoError(t, err)
 }
 
-func testEcho() error {
-	client := NewRedisClient()
-
+func testEcho(client *redis.Client) error {
 	strings := [10]string{
 		"hello",
 		"world",
@@ -71,10 +99,8 @@ func testEcho() error {
 	}
 
 	randomString := strings[rand.Intn(10)]
-	fmt.Printf("Sending command: echo %s", randomString)
 	resp, err := client.Echo(randomString).Result()
 	if err != nil {
-		fmt.Println(err.Error())
 		return err
 	}
 
@@ -82,24 +108,22 @@ func testEcho() error {
 		return fmt.Errorf("Expected %#v, got %#v", randomString, resp)
 	}
 
-	client.Close()
-
-	return nil
+	return client.Close()
 }
 
 func TestPingOnce(t *testing.T) {
 	t.Parallel()
-	err := testPingPongOnce()
+	port, close := setup(t)
+	defer close()
+	err := testPingPongOnce(port)
 	require.NoError(t, err)
 }
 
-func testPingPongOnce() error {
-	conn, err := connect()
+func testPingPongOnce(port int) error {
+	conn, err := connect(port)
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("Connection established, sending PING command (*1\\r\\n$4\\r\\nping\\r\\n)")
 
 	_, err = conn.Write([]byte("*1\r\n$4\r\nping\r\n"))
 	if err != nil {
@@ -107,8 +131,6 @@ func testPingPongOnce() error {
 	}
 
 	time.Sleep(100 * time.Millisecond) // Ensure we aren't reading partial responses
-
-	fmt.Println("Reading response...")
 
 	var readBytes = make([]byte, 16)
 
@@ -135,39 +157,37 @@ func testPingPongOnce() error {
 
 func TestPingPongMultiple(t *testing.T) {
 	t.Parallel()
-	err := testPingPongMultiple()
+	port, close := setup(t)
+	defer close()
+	err := testPingPongMultiple(port)
 	require.NoError(t, err)
 }
 
-func testPingPongMultiple() error {
-	client := NewRedisClient()
-
+func testPingPongMultiple(port int) error {
+	client := NewRedisClient(port)
 	for i := 1; i <= 3; i++ {
 		if err := runPing(client, 1); err != nil {
 			return err
 		}
 	}
-
-	fmt.Printf("Success, closing connection...")
-	client.Close()
-
-	return nil
+	return client.Close()
 }
 
 func TestPingPongConcurrent(t *testing.T) {
 	t.Parallel()
-	err := testPingPongConcurrent()
+	port, close := setup(t)
+	defer close()
+	err := testPingPongConcurrent(port)
 	require.NoError(t, err)
 }
 
-func testPingPongConcurrent() error {
-	client1 := NewRedisClient()
-
+func testPingPongConcurrent(port int) error {
+	client1 := NewRedisClient(port)
 	if err := runPing(client1, 1); err != nil {
 		return err
 	}
 
-	client2 := NewRedisClient()
+	client2 := NewRedisClient(port)
 	if err := runPing(client2, 2); err != nil {
 		return err
 	}
@@ -182,30 +202,23 @@ func testPingPongConcurrent() error {
 		return err
 	}
 
-	fmt.Printf("client-%d: Success, closing connection...", 1)
 	client1.Close()
 
-	client3 := NewRedisClient()
+	client3 := NewRedisClient(port)
 	if err := runPing(client3, 3); err != nil {
 		return err
 	}
 
-	fmt.Printf("client-%d: Success, closing connection...", 2)
 	client2.Close()
-	fmt.Printf("client-%d: Success, closing connection...", 3)
-	client3.Close()
-
-	return nil
+	return client3.Close()
 }
 
 func runPing(client *redis.Client, clientNum int) error {
-	fmt.Printf("client-%d: Sending ping command...", clientNum)
 	pong, err := client.Ping().Result()
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("client-%d: Received response.", clientNum)
 	if pong != "PONG" {
 		return fmt.Errorf("client-%d: Expected \"PONG\", got %#v", clientNum, pong)
 	}
@@ -215,12 +228,14 @@ func runPing(client *redis.Client, clientNum int) error {
 
 func TestGetSet(t *testing.T) {
 	t.Parallel()
-	err := testGetSet()
+	port, close := setup(t)
+	defer close()
+	err := testGetSet(port)
 	require.NoError(t, err)
 }
 
-func testGetSet() error {
-	client := NewRedisClient()
+func testGetSet(port int) error {
+	client := NewRedisClient(port)
 	strings := [10]string{
 		"abcd",
 		"defg",
@@ -237,7 +252,6 @@ func testGetSet() error {
 	randomKey := strings[rand.Intn(10)]
 	randomValue := strings[rand.Intn(10)]
 
-	fmt.Printf("Setting key %s to %s\n", randomKey, randomValue)
 	resp, err := client.Set(randomKey, randomValue, 0).Result()
 	if err != nil {
 		return err
@@ -247,7 +261,6 @@ func testGetSet() error {
 		return fmt.Errorf("Expected \"OK\", got %#v", resp)
 	}
 
-	fmt.Printf("Getting key %s\n", randomKey)
 	resp, err = client.Get(randomKey).Result()
 	if err != nil {
 		return err
@@ -257,13 +270,14 @@ func testGetSet() error {
 		return fmt.Errorf("Expected %#v, got %#v", randomValue, resp)
 	}
 
-	fmt.Println("after close")
-	client.Close()
-	return nil
+	return client.Close()
 }
 
 func TestRedisSetKV(t *testing.T) {
-	client := NewRedisClient()
+	t.Parallel()
+	port, close := setup(t)
+	defer close()
+	client := NewRedisClient(port)
 	err := setGet(client)
 	require.NoError(t, err)
 	client.Close()
@@ -293,14 +307,15 @@ func setGet(client *redis.Client) error {
 	return err
 }
 
-func BenchmarkProcessSet(b *testing.B) {
-	setCommand := []byte("*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		eventHandler(nil, setCommand)
-	}
-	b.StopTimer()
-}
+// func BenchmarkProcessSet(b *testing.B) {
+// 	setCommand := []byte("*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n")
+// 	b.ResetTimer()
+// 	server := &Server{}
+// 	for i := 0; i < b.N; i++ {
+// 		server.eventHandler(nil, setCommand)
+// 	}
+// 	b.StopTimer()
+// }
 
 func TestSetArray(t *testing.T) {
 	t.Parallel()
@@ -323,8 +338,22 @@ func TestFindNumber(t *testing.T) {
 	require.Equal(t, 6, width)
 }
 
+func setup(t *testing.T) (int, func()) {
+	port := uniquePort()
+	s, err := NewServer(DefaultHost, port)
+	require.NoError(t, err)
+	go func() {
+		err := s.Start()
+		require.NoError(t, err)
+	}()
+	return port, s.Stop
+}
+
 func TestErrorHandling(t *testing.T) {
-	conn, err := connect()
+	t.Parallel()
+	port, close := setup(t)
+	defer close()
+	conn, err := connect(port)
 	require.NoError(t, err)
 
 	_, err = conn.Write([]byte("*1\r\n$13\r\ninvalidaction\r\n"))
@@ -343,4 +372,28 @@ func TestErrorHandling(t *testing.T) {
 	if diff := cmp.Diff(expected, actual); diff != "" {
 		t.Fatal(diff)
 	}
+}
+
+func TestClientServerTeardown(t *testing.T) {
+	t.Parallel()
+	var (
+		err error
+	)
+	s, err := NewServer(DefaultHost, DefaultPort)
+	require.NoError(t, err)
+	go func() {
+		err := s.Start()
+		require.NoError(t, err)
+	}()
+
+	c, err := NewClient(DefaultHost, DefaultPort)
+	require.NoError(t, err)
+
+	s.Stop()
+
+	err = c.Ping()
+	require.Equal(t, io.EOF, err)
+
+	err = c.Stop()
+	require.NoError(t, err)
 }

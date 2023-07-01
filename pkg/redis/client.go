@@ -10,9 +10,8 @@ import (
 )
 
 type Client struct {
-	url  string
-	conn net.Conn
-
+	url      string
+	conn     net.Conn
 	shutdown chan bool
 	requests chan clientReq
 }
@@ -44,14 +43,10 @@ func NewClient(host string, port int) (*Client, error) {
 }
 
 func connectWithTimeout(addr string, timeout time.Duration) (net.Conn, error) {
-	var (
-		err  error
-		conn net.Conn
-
-		timedOut = time.Now().Add(timeout)
-	)
+	timedOut := time.Now().Add(timeout)
 	for {
-		if conn, err = net.Dial(DefaultNetwork, addr); err == nil {
+		conn, err := net.DialTimeout(DefaultNetwork, addr, timeout)
+		if err == nil {
 			return conn, nil
 		}
 
@@ -194,9 +189,7 @@ func (c *Client) validateClient() error {
 }
 
 func createMessage(args []string) []byte {
-	var (
-		builder bytes.Buffer
-	)
+	var builder bytes.Buffer
 
 	if len(args) == 0 {
 		return []byte{}
@@ -231,16 +224,13 @@ func (c *Client) start() {
 }
 
 func (c *Client) scheduler() {
-	var (
-		err error
-	)
 	for {
 		select {
 		case <-c.shutdown:
 			return
 		case req := <-c.requests:
 			data := createMessage(req.req)
-			_, err = c.conn.Write(data)
+			_, err := c.conn.Write(data)
 			if err != nil {
 				req.res <- []string{string(Error) + err.Error()}
 				continue

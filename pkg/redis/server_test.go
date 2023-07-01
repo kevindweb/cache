@@ -321,6 +321,7 @@ func TestSetArray(t *testing.T) {
 	t.Parallel()
 	req := request{
 		req: "*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n",
+		kv:  map[string]string{},
 	}
 	err := req.process()
 	require.NoError(t, err)

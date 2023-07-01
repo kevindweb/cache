@@ -50,7 +50,7 @@ func connectWithTimeout(addr string, timeout time.Duration) (net.Conn, error) {
 			return conn, nil
 		}
 
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if isTimeout(err) {
 			return nil, err
 		}
 
@@ -255,27 +255,23 @@ func (c *Client) scheduler() {
 func readFromConnection(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	response := make([]byte, 0)
 
-	// Set read deadline based on the provided timeout
 	err := conn.SetReadDeadline(time.Now().Add(timeout))
 	if err != nil {
 		return response, err
 	}
 
 	for {
-		// Read a chunk of data from the connection
-		buffer := make([]byte, 1024) // Adjust the buffer size based on your needs
+		buffer := make([]byte, 1024) // TODO: Adjust the buffer size based on workload
 		n, err := conn.Read(buffer)
 		if err != nil {
 			return response, err
 		}
 
-		// Append the read data to the response
-		response = append(response, buffer[:n]...)
-
-		// Break the loop if no more data is available
 		if n == 0 {
 			break
 		}
+
+		response = append(response, buffer[:n]...)
 	}
 
 	return response, nil

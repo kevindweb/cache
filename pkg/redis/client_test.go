@@ -17,6 +17,7 @@ func setupClient() *Client {
 
 func TestGet(t *testing.T) {
 	t.Parallel()
+
 	testCases := []struct {
 		name              string
 		key               string
@@ -58,26 +59,31 @@ func TestGet(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range testCases {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			c := setupClient()
-			if !tt.failBeforeRequest {
+
+			if !tc.failBeforeRequest {
 				go func() {
 					req := <-c.requests
-					require.Equal(t, []string{GET, tt.key}, req.req)
-					req.res <- []string{tt.response}
+					require.Equal(t, []string{GET, tc.key}, req.req)
+					req.res <- []string{tc.response}
 				}()
 			}
-			val, err := c.Get(tt.key)
-			tt.check(t, val, err)
+
+			val, err := c.Get(tc.key)
+			tc.check(t, val, err)
 		})
 	}
 }
 
 func TestSet(t *testing.T) {
 	t.Parallel()
+
 	testCases := []struct {
 		name              string
 		key               string
@@ -123,24 +129,30 @@ func TestSet(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range testCases {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			c := setupClient()
-			if !tt.failBeforeRequest {
+
+			if !tc.failBeforeRequest {
 				go func() {
 					req := <-c.requests
-					require.Equal(t, []string{SET, tt.key, tt.val}, req.req)
-					req.res <- []string{tt.response}
+					require.Equal(t, []string{SET, tc.key, tc.val}, req.req)
+					req.res <- []string{tc.response}
 				}()
 			}
-			tt.check(t, c.Set(tt.key, tt.val))
+
+			tc.check(t, c.Set(tc.key, tc.val))
 		})
 	}
 }
+
 func TestDelete(t *testing.T) {
 	t.Parallel()
+
 	testCases := []struct {
 		name              string
 		key               string
@@ -181,25 +193,30 @@ func TestDelete(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range testCases {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			c := setupClient()
-			if !tt.failBeforeRequest {
+
+			if !tc.failBeforeRequest {
 				go func() {
 					req := <-c.requests
-					require.Equal(t, []string{DEL, tt.key}, req.req)
-					req.res <- []string{tt.response}
+					require.Equal(t, []string{DEL, tc.key}, req.req)
+					req.res <- []string{tc.response}
 				}()
 			}
-			tt.check(t, c.Del(tt.key))
+
+			tc.check(t, c.Del(tc.key))
 		})
 	}
 }
 
 func TestPing(t *testing.T) {
 	t.Parallel()
+
 	testCases := []struct {
 		name              string
 		response          string
@@ -235,22 +252,27 @@ func TestPing(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range testCases {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			var c *Client
-			if !tt.failBeforeRequest {
+
+			if !tc.failBeforeRequest {
 				c = setupClient()
+
 				go func() {
 					req := <-c.requests
 					require.Equal(t, []string{PING}, req.req)
-					req.res <- []string{tt.response}
+					req.res <- []string{tc.response}
 				}()
 			} else {
 				c = &Client{}
 			}
-			tt.check(t, c.Ping())
+
+			tc.check(t, c.Ping())
 		})
 	}
 }

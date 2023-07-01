@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math/rand"
@@ -294,21 +295,13 @@ func setGet(client *redis.Client) error {
 	return err
 }
 
-// func BenchmarkProcessSet(b *testing.B) {
-// 	setCommand := []byte("*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n")
-// 	b.ResetTimer()
-// 	server := &Server{}
-// 	for i := 0; i < b.N; i++ {
-// 		server.eventHandler(nil, setCommand)
-// 	}
-// 	b.StopTimer()
-// }
-
 func TestSetArray(t *testing.T) {
 	t.Parallel()
+	var buf bytes.Buffer
 	req := request{
 		req: "*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n",
 		kv:  map[string]string{},
+		buf: &buf,
 	}
 	err := req.process()
 	require.NoError(t, err)
@@ -384,4 +377,17 @@ func TestClientServerTeardown(t *testing.T) {
 
 	err = c.Stop()
 	require.NoError(t, err)
+}
+
+func BenchmarkProcessSet(b *testing.B) {
+	setCommand := []byte("*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n")
+	b.ResetTimer()
+	server := &Server{
+		kv:     map[string]string{},
+		reqBuf: bytes.NewBuffer(make([]byte, BufferSize)),
+	}
+	for i := 0; i < b.N; i++ {
+		server.eventHandler(nil, setCommand)
+	}
+	b.StopTimer()
 }

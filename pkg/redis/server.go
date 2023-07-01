@@ -15,6 +15,9 @@ type Server struct {
 	shutdown bool
 	logger   *log.Logger
 	kv       map[string]string
+	errBuf   *bytes.Buffer
+	reqBuf   *bytes.Buffer
+	args     []string
 }
 
 func NewServer(host string, port int) (*Server, error) {
@@ -26,6 +29,9 @@ func NewServer(host string, port int) (*Server, error) {
 		Address: fmt.Sprintf("%s://%s:%d", DefaultNetwork, host, port),
 		logger:  log.New(nil, "", 0),
 		kv:      map[string]string{},
+		errBuf:  bytes.NewBuffer(make([]byte, BufferSize)),
+		reqBuf:  bytes.NewBuffer(make([]byte, BufferSize)),
+		args:    make([]string, ArgLength),
 	}, nil
 }
 
@@ -47,24 +53,38 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 	}
 
 	request := &request{
-		req: string(in),
-		kv:  s.kv,
+		req:  string(in),
+		kv:   s.kv,
+		buf:  s.reqBuf,
+		args: s.args,
 	}
 	if err := request.process(); err != nil {
-		out = processErr(err)
+		out = s.processErr(err)
 	} else {
 		out = request.out
 	}
 
 	s.kv = request.kv
+	s.reqBuf = request.buf
+	s.args = request.args
 
 	return
 }
 
+func (s *Server) processErr(err error) []byte {
+	s.errBuf.Reset()
+	s.errBuf.WriteByte(Error)
+	s.errBuf.WriteString(err.Error())
+	s.errBuf.WriteString(NewLine)
+	return s.errBuf.Bytes()
+}
+
 type request struct {
-	req string
-	out []byte
-	kv  map[string]string
+	req  string
+	out  []byte
+	kv   map[string]string
+	buf  *bytes.Buffer
+	args []string
 }
 
 func (r *request) process() error {
@@ -79,11 +99,12 @@ func (r *request) process() error {
 
 func (r *request) processArray() error {
 	numArgs := int(r.req[1] - '0')
-	args, err := r.parseArguments(numArgs)
+	err := r.parseArguments(numArgs)
 	if err != nil {
 		return err
 	}
 
+	args := r.args
 	action := args[0]
 	switch action {
 	case ECHO:
@@ -102,22 +123,24 @@ func (r *request) processArray() error {
 	return nil
 }
 
-func (r *request) parseArguments(numArgs int) ([]string, error) {
-	arguments := make([]string, numArgs)
+func (r *request) parseArguments(numArgs int) error {
+	if numArgs > len(r.args) {
+		r.args = make([]string, numArgs)
+	}
 	var err error
 
 	n := 4
 	for i := 0; i < numArgs; i++ {
-		arguments[i], n, err = r.processArg(n)
+		r.args[i], n, err = r.processArg(n)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if n == 0 {
-			return nil, fmt.Errorf("expected %d args, broke after %d with request: %s", numArgs-1, i, r.req)
+			return fmt.Errorf("expected %d args, broke after %d with request: %s", numArgs-1, i, r.req)
 		}
 	}
-	return arguments, nil
+	return nil
 }
 
 func (r *request) processArg(start int) (string, int, error) {
@@ -163,19 +186,11 @@ func (r *request) delResponse(key string) {
 }
 
 func (r *request) processSimpleString(msg string) {
-	msgBuffer := bytes.NewBuffer([]byte{})
-	msgBuffer.WriteByte(BulkString)
-	msgBuffer.WriteString(strconv.Itoa(len(msg)))
-	msgBuffer.WriteString(NewLine)
-	msgBuffer.WriteString(msg)
-	msgBuffer.WriteString(NewLine)
-	r.out = msgBuffer.Bytes()
-}
-
-func processErr(err error) []byte {
-	errBuffer := bytes.NewBuffer([]byte{})
-	errBuffer.WriteByte(Error)
-	errBuffer.WriteString(err.Error())
-	errBuffer.WriteString(NewLine)
-	return errBuffer.Bytes()
+	r.buf.Reset()
+	r.buf.WriteByte(BulkString)
+	r.buf.WriteString(strconv.Itoa(len(msg)))
+	r.buf.WriteString(NewLine)
+	r.buf.WriteString(msg)
+	r.buf.WriteString(NewLine)
+	r.out = r.buf.Bytes()
 }

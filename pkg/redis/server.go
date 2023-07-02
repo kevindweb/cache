@@ -91,15 +91,27 @@ func (r *request) process() error {
 	dataType := r.req[0]
 	switch dataType {
 	case Array:
-		return r.processArray()
 	default:
 		return fmt.Errorf("datatype %b not implemented", dataType)
 	}
+
+	digitWidth, numRequests, err := r.findNumber(1)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < numRequests; i++ {
+		if true {
+			return r.processArray(digitWidth + DataTypeLength + NewLineLen)
+		}
+	}
+
+	return nil
 }
 
-func (r *request) processArray() error {
-	numArgs := int(r.req[1] - '0')
-	err := r.parseArguments(numArgs)
+func (r *request) processArray(start int) error {
+	numArgs := int(r.req[start+1] - '0')
+	err := r.parseArguments(start, numArgs)
 	if err != nil {
 		return err
 	}
@@ -123,13 +135,13 @@ func (r *request) processArray() error {
 	return nil
 }
 
-func (r *request) parseArguments(numArgs int) error {
+func (r *request) parseArguments(offset, numArgs int) error {
 	if numArgs > len(r.args) {
 		r.args = make([]string, numArgs)
 	}
 	var err error
 
-	n := 4
+	n := 4 + offset
 	for i := 0; i < numArgs; i++ {
 		r.args[i], n, err = r.processArg(n)
 		if err != nil {
@@ -152,7 +164,7 @@ func (r *request) processArg(start int) (string, int, error) {
 			return "", 0, err
 		}
 
-		offset := start + CharacterLength + NewLineLen + width
+		offset := start + DataTypeLength + NewLineLen + width
 		s := r.req[offset : offset+length]
 		return s, offset + length + NewLineLen, nil
 	default:
@@ -187,6 +199,12 @@ func (r *request) delResponse(key string) {
 
 func (r *request) processSimpleString(msg string) {
 	r.buf.Reset()
+	r.buf.WriteByte(Array)
+	r.buf.WriteString("1")
+	r.buf.WriteString(NewLine)
+	r.buf.WriteByte(Array)
+	r.buf.WriteString("1")
+	r.buf.WriteString(NewLine)
 	r.buf.WriteByte(BulkString)
 	r.buf.WriteString(strconv.Itoa(len(msg)))
 	r.buf.WriteString(NewLine)

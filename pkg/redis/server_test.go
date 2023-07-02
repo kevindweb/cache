@@ -299,7 +299,7 @@ func TestSetArray(t *testing.T) {
 	}
 	err := req.process()
 	require.NoError(t, err)
-	require.Equal(t, "$2\r\nOK\r\n", string(req.out))
+	require.Equal(t, "*1\r\n*1\r\n$2\r\nOK\r\n", string(req.out))
 }
 
 func TestFindNumber(t *testing.T) {

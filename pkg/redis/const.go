@@ -12,13 +12,13 @@ const (
 	DEL  string = "del"
 	SET  string = "set"
 
-	Array           byte   = '*'
-	Error           byte   = '-'
-	BulkString      byte   = '$'
-	CarraigeReturn  byte   = '\r'
-	CharacterLength int    = 1
-	NewLine         string = "\r\n"
-	NewLineLen      int    = 2
+	Array          byte   = '*'
+	Error          byte   = '-'
+	BulkString     byte   = '$'
+	CarraigeReturn byte   = '\r'
+	DataTypeLength int    = 1
+	NewLine        string = "\r\n"
+	NewLineLen     int    = 2
 
 	ArgLength  int = 10
 	BufferSize int = 256
@@ -43,4 +43,7 @@ const (
 
 	ClientUninitializedErr string = "client was not initialized"
 	ClientInitTimeoutErr   string = "timed out dialing %s for %s"
+
+	EmptyBatchResponseErr   string = "empty batch response from request"
+	InvalidBatchResponseErr string = "response datatype %s is not implemented at inx %d: %s"
 )

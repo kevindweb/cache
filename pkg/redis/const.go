@@ -11,6 +11,7 @@ const (
 	GET  string = "get"
 	DEL  string = "del"
 	SET  string = "set"
+	ERR  string = "err"
 
 	Array          byte   = '*'
 	Error          byte   = '-'

@@ -1,4 +1,4 @@
-package redis
+package protocol
 
 import (
 	"testing"
@@ -31,18 +31,18 @@ func TestProtocolParse(t *testing.T) {
 		},
 		{
 			name:    "invalid batch number",
-			request: "*1\r\n*1\r\n$13\r\ntotallyvalids\r\n*1\r\n$2\r\nOK\r\n",
+			request: "*0\r\n*1\r\n$13\r\ntotallyvalids\r\n*1\r\n$2\r\nOK\r\n",
 			wantErr: true,
 		},
 		{
-			name:     "single valid delete request no array",
-			request:  "$3\r\ndel\r\n$3\r\nkey\r\n",
-			expected: [][]string{{"del", "key"}},
+			name:    "multi bulk string requires array",
+			request: "$3\r\ndel\r\n$3\r\nkey\r\n",
+			wantErr: true,
 		},
 		{
 			name:     "single valid set request no bulk",
-			request:  "1*\r\n$3\r\nSet\r\n$3\r\nkey\r\n$3\r\nval\r\n",
-			expected: [][]string{{"set", "key", "val"}},
+			request:  "*3\r\n$3\r\nSet\r\n$3\r\nkey\r\n$3\r\nval\r\n",
+			expected: [][]string{{"Set", "key", "val"}},
 		},
 		{
 			name:     "valid simple string",
@@ -62,20 +62,19 @@ func TestProtocolParse(t *testing.T) {
 		{
 			name:     "valid ok",
 			request:  "*1\r\n*1\r\n$2\r\nOK\r\n",
-			expected: [][]string{{"ok"}},
+			expected: [][]string{{"OK"}},
 		},
 		{
 			name:     "many batched requests",
 			request:  "*2\r\n*1\r\n$13\r\ntotallyvalids\r\n*1\r\n$2\r\nOK\r\n",
-			expected: [][]string{{"totallyvalids"}, {"ok"}},
+			expected: [][]string{{"totallyvalids"}, {"OK"}},
 		},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			str := &tc.request
-			requests, err := parseRequests(str)
+			requests, err := splitBatchResponse(tc.request)
 			require.Equal(t, tc.wantErr, err != nil, "error expected: %t, got err: %v", tc.wantErr, err)
 			if tc.wantErr {
 				return

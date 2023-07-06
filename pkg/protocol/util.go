@@ -148,6 +148,12 @@ func processArg(response string, offset int) ([]string, int, error) {
 		offset += DataTypeLength + NewLineLen + width
 		s := response[offset : offset+length]
 		return []string{s}, offset + length + NewLineLen, nil
+	case SimpleString:
+		str, until, err := parseLine(response, offset+1)
+		if err != nil {
+			return nil, 0, err
+		}
+		return []string{str}, until, nil
 	case Error:
 		errStr, until, err := parseLine(response, offset+1)
 		if err != nil {
@@ -168,13 +174,18 @@ func parseLine(response string, start int) (string, int, error) {
 		return "", 0, fmt.Errorf("line %s needs to end with %s", response[start:], NewLine)
 	}
 
-	return response[start:until], until + 1, nil
+	return response[start:until], until + NewLineLen, nil
 }
 
 func parseNumber(str string, start int) (int, int, error) {
 	var i int
-	for i = start + 1; str[i] != CarraigeReturn; i++ {
+	for i = start + 1; i < len(str) && str[i] != CarraigeReturn; i++ {
 	}
+
+	if i >= len(str) {
+		return 0, 0, fmt.Errorf("failed to parse %s", str)
+	}
+
 	numStr := str[start:i]
 	numWidth := len(numStr)
 	num, err := strconv.Atoi(numStr)

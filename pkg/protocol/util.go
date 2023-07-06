@@ -5,13 +5,12 @@ import (
 	"strconv"
 )
 
-func splitBatchResponse(batchResponse string) ([][]string, error) {
+func SplitBatchResponse(batchResponse string) ([][]string, error) {
 	if len(batchResponse) == 0 {
 		return nil, fmt.Errorf(EmptyBatchResponseErr)
 	}
 
 	dataType := batchResponse[0]
-	fmt.Printf("dataType: %s\n", string(dataType)) // Debugging statement
 	switch dataType {
 	case Array:
 	case SimpleString:
@@ -20,6 +19,17 @@ func splitBatchResponse(batchResponse string) ([][]string, error) {
 			return nil, err
 		}
 		return [][]string{{response}}, nil
+	case BulkString:
+		response, offset, err := parseArguments(batchResponse, 1, 0)
+		if err != nil {
+			return nil, err
+		}
+		if offset < len(batchResponse) {
+			return nil, fmt.Errorf(
+				"incomplete parsing (%d/%d): %s", offset, len(batchResponse), batchResponse,
+			)
+		}
+		return [][]string{response}, nil
 	case Error:
 		errStr, _, err := parseLine(batchResponse, 1)
 		if err != nil {
@@ -34,7 +44,6 @@ func splitBatchResponse(batchResponse string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("digitWidth: %d, batchLength: %d\n", digitWidth, batchLength) // Debugging statement
 
 	if batchLength == 0 {
 		return nil, fmt.Errorf(EmptyBatchResponseErr)
@@ -53,8 +62,6 @@ func splitBatchResponse(batchResponse string) ([][]string, error) {
 
 	batch := make([][]string, batchLength)
 	for i := 0; i < batchLength; i++ {
-		fmt.Println("happening", batch)
-		fmt.Println("batch response", start, batchResponse[start:start+1])
 		response, start, err = parseResponse(batchResponse, batchLength, start)
 		if err != nil {
 			return nil, err
@@ -67,7 +74,6 @@ func splitBatchResponse(batchResponse string) ([][]string, error) {
 
 func parseResponse(batchResponse string, numArgs, start int) ([]string, int, error) {
 	dataType := batchResponse[start]
-	fmt.Printf("parseResponse: dataType: %s, start: %d\n", string(dataType), start) // Debugging statement
 	switch dataType {
 	case Array:
 		return processArray(batchResponse, start+1)
@@ -89,7 +95,6 @@ func processArray(response string, offset int) ([]string, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	fmt.Printf("processArray: digitWidth: %d, numArgs: %d\n", digitWidth, numArgs) // Debugging statement
 
 	args, offset, err := parseArguments(response, numArgs, offset+NewLineLen+digitWidth)
 	if err != nil {
@@ -128,6 +133,7 @@ func parseArguments(response string, numArgs, offset int) ([]string, int, error)
 			)
 		}
 	}
+
 	return args, offset, nil
 }
 
@@ -137,7 +143,6 @@ func processArg(response string, offset int) ([]string, int, error) {
 	}
 
 	dataType := response[offset]
-	fmt.Printf("processArg: dataType: %s, offset: %d\n", string(dataType), offset) // Debugging statement
 	switch dataType {
 	case BulkString:
 		width, length, err := parseNumber(response, offset+1)

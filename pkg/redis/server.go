@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"app/pkg/protocol"
 	"bytes"
 	"errors"
 	"fmt"
@@ -88,98 +89,31 @@ type request struct {
 }
 
 func (r *request) process() error {
-	dataType := r.req[0]
-	switch dataType {
-	case Array:
-	default:
-		return fmt.Errorf("datatype %b not implemented", dataType)
-	}
-
-	digitWidth, numRequests, err := r.findNumber(1)
+	requests, err := protocol.SplitBatchResponse(r.req)
 	if err != nil {
 		return err
 	}
 
-	for i := 0; i < numRequests; i++ {
+	for _, args := range requests {
 		if true {
-			return r.processArray(digitWidth + DataTypeLength + NewLineLen)
+			switch args[0] {
+			case ECHO:
+				r.processSimpleString(args[1])
+			case PING:
+				r.processSimpleString(PONG)
+			case SET:
+				r.setResponse(args[1], args[2])
+			case GET:
+				r.getResponse(args[1])
+			case DEL:
+				r.delResponse(args[1])
+			default:
+				return fmt.Errorf("action undefined: %s", args[0])
+			}
 		}
 	}
 
 	return nil
-}
-
-func (r *request) processArray(start int) error {
-	numArgs := int(r.req[start+1] - '0')
-	err := r.parseArguments(start, numArgs)
-	if err != nil {
-		return err
-	}
-
-	args := r.args
-	action := args[0]
-	switch action {
-	case ECHO:
-		r.processSimpleString(args[1])
-	case PING:
-		r.processSimpleString(PONG)
-	case SET:
-		r.setResponse(args[1], args[2])
-	case GET:
-		r.getResponse(args[1])
-	case DEL:
-		r.delResponse(args[1])
-	default:
-		return fmt.Errorf("action undefined: %s", action)
-	}
-	return nil
-}
-
-func (r *request) parseArguments(offset, numArgs int) error {
-	if numArgs > len(r.args) {
-		r.args = make([]string, numArgs)
-	}
-	var err error
-
-	n := 4 + offset
-	for i := 0; i < numArgs; i++ {
-		r.args[i], n, err = r.processArg(n)
-		if err != nil {
-			return err
-		}
-
-		if n == 0 {
-			return fmt.Errorf("expected %d args, broke after %d with request: %s", numArgs-1, i, r.req)
-		}
-	}
-	return nil
-}
-
-func (r *request) processArg(start int) (string, int, error) {
-	dataType := r.req[start]
-	switch dataType {
-	case BulkString:
-		width, length, err := r.findNumber(start + 1)
-		if err != nil {
-			return "", 0, err
-		}
-
-		offset := start + DataTypeLength + NewLineLen + width
-		s := r.req[offset : offset+length]
-		return s, offset + length + NewLineLen, nil
-	default:
-		return "", 0, fmt.Errorf("process (%s) not implemented at inx %d", string(dataType), start)
-	}
-}
-
-func (r *request) findNumber(start int) (int, int, error) {
-	var i int
-	for i = start + 1; r.req[i] != CarraigeReturn; i++ {
-	}
-	num := r.req[start:i]
-	numWidth := len(num)
-	length, err := strconv.Atoi(num)
-	return numWidth, length, err
 }
 
 func (r *request) setResponse(key, value string) {
@@ -199,12 +133,12 @@ func (r *request) delResponse(key string) {
 
 func (r *request) processSimpleString(msg string) {
 	r.buf.Reset()
-	r.buf.WriteByte(Array)
-	r.buf.WriteString("1")
-	r.buf.WriteString(NewLine)
-	r.buf.WriteByte(Array)
-	r.buf.WriteString("1")
-	r.buf.WriteString(NewLine)
+	// r.buf.WriteByte(Array)
+	// r.buf.WriteString("1")
+	// r.buf.WriteString(NewLine)
+	// r.buf.WriteByte(Array)
+	// r.buf.WriteString("1")
+	// r.buf.WriteString(NewLine)
 	r.buf.WriteByte(BulkString)
 	r.buf.WriteString(strconv.Itoa(len(msg)))
 	r.buf.WriteString(NewLine)

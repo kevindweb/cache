@@ -74,7 +74,7 @@ func TestProtocolParse(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			requests, err := splitBatchResponse(tc.request)
+			requests, err := SplitBatchResponse(tc.request)
 			require.Equal(t, tc.wantErr, err != nil, "error expected: %t, got err: %v", tc.wantErr, err)
 			if tc.wantErr {
 				return

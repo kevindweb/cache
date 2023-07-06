@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"app/pkg/protocol"
 	"bytes"
 	"errors"
 	"fmt"
@@ -246,7 +247,7 @@ func (c *Client) scheduler() {
 				return
 			}
 
-			responses, err := splitBatchResponse(string(batchResponse))
+			responses, err := protocol.SplitBatchResponse(string(batchResponse))
 			if err != nil {
 				req.res <- []string{string(Error) + err.Error()}
 				return
@@ -258,141 +259,6 @@ func (c *Client) scheduler() {
 		}
 	}
 }
-
-func splitBatchResponse(batchResponse string) ([][]string, error) {
-	if len(batchResponse) == 0 {
-		return nil, fmt.Errorf(EmptyBatchResponseErr)
-	}
-
-	dataType := batchResponse[0]
-	switch dataType {
-	case Array:
-	default:
-		return nil, fmt.Errorf(InvalidBatchResponseErr, string(dataType), 0, batchResponse)
-	}
-
-	digitWidth, batchLength, err := parseNumber(batchResponse, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if batchLength == 0 {
-		return nil, fmt.Errorf(EmptyBatchResponseErr)
-	}
-
-	start := DataTypeLength + digitWidth + NewLineLen
-	var response []string
-
-	batch := make([][]string, batchLength)
-	for i := 0; i < batchLength; i++ {
-		response, start, err = parseResponse(batchResponse, batchLength, start)
-		if err != nil {
-			return nil, err
-		}
-		batch[i] = response
-	}
-
-	return batch, nil
-}
-
-func parseResponse(batchResponse string, numArgs, start int) ([]string, int, error) {
-	dataType := batchResponse[start]
-	switch dataType {
-	case Array:
-		return processArray(batchResponse, start+1)
-	case BulkString:
-		return parseArguments(batchResponse, numArgs, start)
-	default:
-		return nil, 0, fmt.Errorf(InvalidBatchResponseErr, string(dataType), start, batchResponse)
-	}
-}
-
-func processArray(response string, offset int) ([]string, int, error) {
-	digitWidth, numArgs, err := parseNumber(response, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	args, offset, err := parseArguments(response, numArgs, offset+NewLineLen+digitWidth)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return args, offset, nil
-}
-
-func parseArguments(response string, numArgs, offset int) ([]string, int, error) {
-	args := make([]string, numArgs)
-	var err error
-
-	for i := 0; i < numArgs; i++ {
-		args[i], offset, err = processArg(response, offset)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if offset == 0 {
-			return nil, 0, fmt.Errorf(
-				"expected %d args, broke after %d with request: %s", numArgs-1, i, response,
-			)
-		}
-	}
-	return args, offset, nil
-}
-
-func processArg(response string, offset int) (string, int, error) {
-	dataType := response[offset]
-	switch dataType {
-	case BulkString:
-		width, length, err := parseNumber(response, offset+1)
-		if err != nil {
-			return "", 0, err
-		}
-
-		offset += DataTypeLength + NewLineLen + width
-		s := response[offset : offset+length]
-		return s, offset + length + NewLineLen, nil
-	default:
-		return "", 0, fmt.Errorf(InvalidBatchResponseErr, string(dataType), offset, response)
-	}
-}
-
-func parseNumber(str string, start int) (int, int, error) {
-	var i int
-	for i = start + 1; str[i] != CarraigeReturn; i++ {
-	}
-	numStr := str[start:i]
-	numWidth := len(numStr)
-	num, err := strconv.Atoi(numStr)
-	return numWidth, num, err
-}
-
-// func parseRedisResponse(response string) ([][]string, error) {
-// 	var results [][]string
-
-// 	lines := strings.Split(response, "\r\n")
-// 	for _, line := range lines {
-// 		if line[0] == Array {
-// 			// This is a multi-bulk response
-// 			count := strings.TrimSpace(line[1:])
-// 			numArgs, err := strconv.Atoi(count)
-// 			if err != nil {
-// 				return nil, err
-// 			}
-
-// 			arguments := []string{}
-// 			for i := 0; i < numArgs; i++ {
-// 				arguments = append(arguments, strings.TrimSpace(lines[i+2]))
-// 			}
-// 			results = append(results, arguments)
-// 		} else {
-// 			// This is a single-bulk response
-// 			results = append(results, []string{strings.TrimSpace(line)})
-// 		}
-// 	}
-
-// 	return results, nil
-// }
 
 func readFromConnection(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	response := make([]byte, 0)

@@ -105,7 +105,7 @@ func errorResponse(command string, res []string) error {
 		return fmt.Errorf(EmptyResArgErr, command)
 	}
 
-	if first[0] != Error {
+	if first[0] != protocol.Error {
 		return nil
 	}
 
@@ -196,19 +196,19 @@ func createMessage(args []string) []byte {
 		return []byte{}
 	}
 
-	builder.WriteByte(Array)
+	builder.WriteByte(protocol.Array)
 	builder.WriteString("1")
-	builder.WriteString(NewLine)
-	builder.WriteByte(Array)
+	builder.WriteString(protocol.NewLine)
+	builder.WriteByte(protocol.Array)
 	builder.WriteString(strconv.Itoa(len(args)))
-	builder.WriteString(NewLine)
+	builder.WriteString(protocol.NewLine)
 	for _, arg := range args {
-		builder.WriteByte(BulkString)
+		builder.WriteByte(protocol.BulkString)
 		msgLength := strconv.Itoa(len(arg))
 		builder.WriteString(msgLength)
-		builder.WriteString(NewLine)
+		builder.WriteString(protocol.NewLine)
 		builder.WriteString(arg)
-		builder.WriteString(NewLine)
+		builder.WriteString(protocol.NewLine)
 	}
 	return builder.Bytes()
 }
@@ -236,20 +236,20 @@ func (c *Client) scheduler() {
 			data := createMessage(req.req)
 			_, err := c.conn.Write(data)
 			if err != nil {
-				req.res <- []string{string(Error) + err.Error()}
+				req.res <- []string{string(protocol.Error) + err.Error()}
 				continue
 			}
 
 			timeout := time.Second * 1
 			batchResponse, err := readFromConnection(c.conn, timeout)
 			if err != nil && !isTimeout(err) {
-				req.res <- []string{string(Error) + err.Error()}
+				req.res <- []string{string(protocol.Error) + err.Error()}
 				return
 			}
 
 			responses, err := protocol.SplitBatchResponse(string(batchResponse))
 			if err != nil {
-				req.res <- []string{string(Error) + err.Error()}
+				req.res <- []string{string(protocol.Error) + err.Error()}
 				return
 			}
 

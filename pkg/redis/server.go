@@ -74,9 +74,9 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 
 func (s *Server) processErr(err error) []byte {
 	s.errBuf.Reset()
-	s.errBuf.WriteByte(Error)
+	s.errBuf.WriteByte(protocol.Error)
 	s.errBuf.WriteString(err.Error())
-	s.errBuf.WriteString(NewLine)
+	s.errBuf.WriteString(protocol.NewLine)
 	return s.errBuf.Bytes()
 }
 
@@ -139,10 +139,10 @@ func (r *request) processSimpleString(msg string) {
 	// r.buf.WriteByte(Array)
 	// r.buf.WriteString("1")
 	// r.buf.WriteString(NewLine)
-	r.buf.WriteByte(BulkString)
+	r.buf.WriteByte(protocol.BulkString)
 	r.buf.WriteString(strconv.Itoa(len(msg)))
-	r.buf.WriteString(NewLine)
+	r.buf.WriteString(protocol.NewLine)
 	r.buf.WriteString(msg)
-	r.buf.WriteString(NewLine)
+	r.buf.WriteString(protocol.NewLine)
 	r.out = r.buf.Bytes()
 }

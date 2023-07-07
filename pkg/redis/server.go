@@ -94,55 +94,99 @@ func (r *request) process() error {
 		return err
 	}
 
-	for _, args := range requests {
-		if true {
-			switch args[0] {
-			case ECHO:
-				r.processSimpleString(args[1])
-			case PING:
-				r.processSimpleString(PONG)
-			case SET:
-				r.setResponse(args[1], args[2])
-			case GET:
-				r.getResponse(args[1])
-			case DEL:
-				r.delResponse(args[1])
-			default:
-				return fmt.Errorf("action undefined: %s", args[0])
-			}
+	responses := make([][]string, len(requests))
+	for i, args := range requests {
+		var res []string
+		switch args[0] {
+		case ECHO:
+			res = []string{args[1]}
+		case PING:
+			res = []string{PONG}
+		case SET:
+			res = r.setResponse(args[1], args[2])
+		case GET:
+			res = r.getResponse(args[1])
+		case DEL:
+			res = r.delResponse(args[1])
+		default:
+			res = errResponse(fmt.Sprintf("action undefined: %s", args[0]))
 		}
+		responses[i] = res
 	}
+
+	r.aggregateResponses(responses)
 
 	return nil
 }
 
-func (r *request) setResponse(key, value string) {
+func errResponse(err string) []string {
+	return []string{fmt.Sprintf("%c%s", protocol.Error, err)}
+}
+
+func (r *request) setResponse(key, value string) []string {
 	r.kv[key] = value
-	r.processSimpleString(OK)
+	return []string{OK}
 }
 
-func (r *request) getResponse(key string) {
-	val := r.kv[key]
-	r.processSimpleString(val)
+func (r *request) getResponse(key string) []string {
+	var val string
+	var ok bool
+	if val, ok = r.kv[key]; !ok {
+		return errResponse(fmt.Sprintf("key %s not set", key))
+	}
+	return []string{val}
 }
 
-func (r *request) delResponse(key string) {
+func (r *request) delResponse(key string) []string {
 	delete(r.kv, key)
-	r.processSimpleString(OK)
+	return []string{OK}
 }
 
-func (r *request) processSimpleString(msg string) {
+func (r *request) aggregateResponses(responses [][]string) {
 	r.buf.Reset()
-	// r.buf.WriteByte(Array)
-	// r.buf.WriteString("1")
-	// r.buf.WriteString(NewLine)
-	// r.buf.WriteByte(Array)
-	// r.buf.WriteString("1")
-	// r.buf.WriteString(NewLine)
-	r.buf.WriteByte(protocol.BulkString)
-	r.buf.WriteString(strconv.Itoa(len(msg)))
+	defer func() {
+		r.out = r.buf.Bytes()
+	}()
+
+	if len(responses) == 1 {
+		r.handleSingleResponse(responses[0])
+		return
+	}
+
+	r.writeBulkPrefix(len(responses))
+	for _, response := range responses {
+		r.writeArguments(response)
+	}
+}
+
+func (r *request) handleSingleResponse(response []string) {
+	if len(response) == 1 {
+		r.writeSimpleString(response[0])
+		return
+	}
+
+	r.writeArguments(response)
+}
+
+func (r *request) writeBulkPrefix(count int) {
+	r.buf.WriteByte(protocol.Array)
+	r.buf.WriteString(strconv.Itoa(count))
 	r.buf.WriteString(protocol.NewLine)
+}
+
+func (r *request) writeArguments(args []string) {
+	r.writeBulkPrefix(len(args))
+	for _, arg := range args {
+		r.writeSimpleString(arg)
+	}
+}
+
+func (r *request) writeSimpleString(msg string) {
+	if msg[0] != protocol.Error {
+		r.buf.WriteByte(protocol.BulkString)
+		r.buf.WriteString(strconv.Itoa(len(msg)))
+		r.buf.WriteString(protocol.NewLine)
+	}
 	r.buf.WriteString(msg)
 	r.buf.WriteString(protocol.NewLine)
-	r.out = r.buf.Bytes()
 }

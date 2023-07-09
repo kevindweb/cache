@@ -2,13 +2,13 @@ package redis
 
 import (
 	"app/pkg/protocol"
-	"bytes"
+	pb "app/pkg/protocol/github.com/kevindweb/proto"
 	"errors"
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/tidwall/evio"
+	"google.golang.org/protobuf/proto"
 )
 
 type Server struct {
@@ -16,9 +16,6 @@ type Server struct {
 	shutdown bool
 	logger   *log.Logger
 	kv       map[string]string
-	errBuf   *bytes.Buffer
-	reqBuf   *bytes.Buffer
-	args     []string
 }
 
 func NewServer(host string, port int) (*Server, error) {
@@ -30,9 +27,6 @@ func NewServer(host string, port int) (*Server, error) {
 		Address: fmt.Sprintf("%s://%s:%d", DefaultNetwork, host, port),
 		logger:  log.New(nil, "", 0),
 		kv:      map[string]string{},
-		errBuf:  bytes.NewBuffer(make([]byte, BufferSize)),
-		reqBuf:  bytes.NewBuffer(make([]byte, BufferSize)),
-		args:    make([]string, ArgLength),
 	}, nil
 }
 
@@ -53,11 +47,15 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 		return
 	}
 
+	batch := &pb.BatchedRequest{}
+	if err := proto.Unmarshal(in, batch); err != nil {
+		out = s.processErr(err)
+		return
+	}
+
 	request := &request{
-		req:  string(in),
-		kv:   s.kv,
-		buf:  s.reqBuf,
-		args: s.args,
+		req: batch.Operations,
+		kv:  s.kv,
 	}
 	if err := request.process(); err != nil {
 		out = s.processErr(err)
@@ -66,56 +64,70 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 	}
 
 	s.kv = request.kv
-	s.reqBuf = request.buf
-	s.args = request.args
 
 	return
 }
 
 func (s *Server) processErr(err error) []byte {
-	s.errBuf.Reset()
-	s.errBuf.WriteByte(protocol.Error)
-	s.errBuf.WriteString(err.Error())
-	s.errBuf.WriteString(protocol.NewLine)
-	return s.errBuf.Bytes()
+	errResponse := &pb.BatchedResponse{
+		Results: []*pb.Result{
+			{
+				Status:  pb.Result_FAILURE,
+				Message: err.Error(),
+			},
+		},
+	}
+
+	encoded, encodeErr := proto.Marshal(errResponse)
+	if err != nil {
+		msg := fmt.Sprintf("processing error: %v, encoding error: %v", err, encodeErr)
+		s.logger.Printf(msg)
+		return []byte(msg)
+	}
+
+	return encoded
 }
 
 type request struct {
-	req  string
-	out  []byte
-	kv   map[string]string
-	buf  *bytes.Buffer
-	args []string
+	req []*pb.Operation
+	out []byte
+	kv  map[string]string
 }
 
 func (r *request) process() error {
-	requests, err := protocol.SplitBatchResponse(r.req)
+	results := make([]*pb.Result, len(r.req))
+	for i, op := range r.req {
+		res := &pb.Result{}
+		switch op.Type {
+		case pb.Operation_PING:
+			res.Message = PONG
+		case pb.Operation_SET:
+			res.Message = r.setResponse(op.Key, op.Value)
+		case pb.Operation_GET:
+			msg, err := r.getResponse(op.Key)
+			if err != "" {
+				res.Status = pb.Result_FAILURE
+				res.Message = err
+			} else {
+				res.Message = msg
+			}
+		case pb.Operation_DELETE:
+			res.Message = r.delResponse(op.Key)
+		default:
+			res.Status = pb.Result_FAILURE
+			res.Message = fmt.Sprintf("action undefined: %s", op.Type)
+		}
+		results[i] = res
+	}
+
+	encoded, err := proto.Marshal(&pb.BatchedResponse{
+		Results: results,
+	})
 	if err != nil {
 		return err
 	}
 
-	responses := make([][]string, len(requests))
-	for i, args := range requests {
-		var res []string
-		switch args[0] {
-		case ECHO:
-			res = []string{args[1]}
-		case PING:
-			res = []string{PONG}
-		case SET:
-			res = r.setResponse(args[1], args[2])
-		case GET:
-			res = r.getResponse(args[1])
-		case DEL:
-			res = r.delResponse(args[1])
-		default:
-			res = errResponse(fmt.Sprintf("action undefined: %s", args[0]))
-		}
-		responses[i] = res
-	}
-
-	r.aggregateResponses(responses)
-
+	r.out = encoded
 	return nil
 }
 
@@ -123,70 +135,21 @@ func errResponse(err string) []string {
 	return []string{fmt.Sprintf("%c%s", protocol.Error, err)}
 }
 
-func (r *request) setResponse(key, value string) []string {
+func (r *request) setResponse(key, value string) string {
 	r.kv[key] = value
-	return []string{OK}
+	return OK
 }
 
-func (r *request) getResponse(key string) []string {
+func (r *request) getResponse(key string) (string, string) {
 	var val string
 	var ok bool
 	if val, ok = r.kv[key]; !ok {
-		return errResponse(fmt.Sprintf("key %s not set", key))
+		return "", fmt.Sprintf("key %s not set", key)
 	}
-	return []string{val}
+	return val, ""
 }
 
-func (r *request) delResponse(key string) []string {
+func (r *request) delResponse(key string) string {
 	delete(r.kv, key)
-	return []string{OK}
-}
-
-func (r *request) aggregateResponses(responses [][]string) {
-	r.buf.Reset()
-	defer func() {
-		r.out = r.buf.Bytes()
-	}()
-
-	if len(responses) == 1 {
-		r.handleSingleResponse(responses[0])
-		return
-	}
-
-	r.writeBulkPrefix(len(responses))
-	for _, response := range responses {
-		r.writeArguments(response)
-	}
-}
-
-func (r *request) handleSingleResponse(response []string) {
-	if len(response) == 1 {
-		r.writeSimpleString(response[0])
-		return
-	}
-
-	r.writeArguments(response)
-}
-
-func (r *request) writeBulkPrefix(count int) {
-	r.buf.WriteByte(protocol.Array)
-	r.buf.WriteString(strconv.Itoa(count))
-	r.buf.WriteString(protocol.NewLine)
-}
-
-func (r *request) writeArguments(args []string) {
-	r.writeBulkPrefix(len(args))
-	for _, arg := range args {
-		r.writeSimpleString(arg)
-	}
-}
-
-func (r *request) writeSimpleString(msg string) {
-	if msg[0] != protocol.Error {
-		r.buf.WriteByte(protocol.BulkString)
-		r.buf.WriteString(strconv.Itoa(len(msg)))
-		r.buf.WriteString(protocol.NewLine)
-	}
-	r.buf.WriteString(msg)
-	r.buf.WriteString(protocol.NewLine)
+	return OK
 }

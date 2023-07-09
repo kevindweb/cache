@@ -2,17 +2,21 @@ package redis
 
 import (
 	"app/pkg/protocol"
+	pb "app/pkg/protocol/github.com/kevindweb/proto"
 	"bytes"
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
+	"sync"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type Client struct {
 	url      string
 	conn     net.Conn
+	buf      *bytes.Buffer
 	shutdown chan bool
 	requests chan clientReq
 }
@@ -29,8 +33,11 @@ func NewClient(host string, port int) (*Client, error) {
 	}
 
 	c := &Client{
-		url:  addr,
-		conn: conn,
+		url:      addr,
+		conn:     conn,
+		shutdown: make(chan bool, 1),
+		requests: make(chan clientReq),
+		buf:      bytes.NewBuffer(make([]byte, BufferSize)),
 	}
 
 	c.initChannels()
@@ -77,19 +84,22 @@ func (c *Client) Ping() error {
 }
 
 type clientReq struct {
-	req []string
+	req *pb.Operation
 	res chan []string
 }
 
 func (c *Client) pingRequest() error {
-	response := c.sendRequest(PING)
+	pingOp := &pb.Operation{
+		Type: pb.Operation_PING,
+	}
+	response := c.sendRequest(pingOp)
 	return expectResponse(PING, PONG, response)
 }
 
-func (c *Client) sendRequest(args ...string) []string {
-	resChan := make(chan []string)
+func (c *Client) sendRequest(op *pb.Operation) []string {
+	resChan := make(chan []string, 1)
 	c.requests <- clientReq{
-		req: args,
+		req: op,
 		res: resChan,
 	}
 	return <-resChan
@@ -117,7 +127,11 @@ func (c *Client) Get(key string) (string, error) {
 		return "", err
 	}
 
-	response := c.sendRequest(GET, key)
+	getOp := &pb.Operation{
+		Type: pb.Operation_GET,
+		Key:  key,
+	}
+	response := c.sendRequest(getOp)
 	return getResponse(key, response)
 }
 
@@ -140,7 +154,12 @@ func (c *Client) Set(key, val string) error {
 		return err
 	}
 
-	response := c.sendRequest(SET, key, val)
+	setOp := &pb.Operation{
+		Type:  pb.Operation_SET,
+		Key:   key,
+		Value: val,
+	}
+	response := c.sendRequest(setOp)
 	return expectResponse(SET, OK, response)
 }
 
@@ -163,7 +182,11 @@ func (c *Client) Del(key string) error {
 		return err
 	}
 
-	response := c.sendRequest(DEL, key)
+	delOp := &pb.Operation{
+		Type: pb.Operation_DELETE,
+		Key:  key,
+	}
+	response := c.sendRequest(delOp)
 	return expectResponse(DEL, OK, response)
 }
 
@@ -189,30 +212,6 @@ func (c *Client) validateClient() error {
 	return nil
 }
 
-func createMessage(args []string) []byte {
-	var builder bytes.Buffer
-
-	if len(args) == 0 {
-		return []byte{}
-	}
-
-	builder.WriteByte(protocol.Array)
-	builder.WriteString("1")
-	builder.WriteString(protocol.NewLine)
-	builder.WriteByte(protocol.Array)
-	builder.WriteString(strconv.Itoa(len(args)))
-	builder.WriteString(protocol.NewLine)
-	for _, arg := range args {
-		builder.WriteByte(protocol.BulkString)
-		msgLength := strconv.Itoa(len(arg))
-		builder.WriteString(msgLength)
-		builder.WriteString(protocol.NewLine)
-		builder.WriteString(arg)
-		builder.WriteString(protocol.NewLine)
-	}
-	return builder.Bytes()
-}
-
 func (c *Client) Stop() error {
 	err := c.conn.Close()
 	if err != nil {
@@ -228,34 +227,104 @@ func (c *Client) start() {
 }
 
 func (c *Client) scheduler() {
+	var batch *pb.BatchedRequest
+	var requests []clientReq
+	// var timer *time.Timer
+	// var baseWaitTime = 100 * time.Millisecond // Initial wait time for batching
+	var mu sync.Mutex
+
 	for {
 		select {
 		case <-c.shutdown:
 			return
 		case req := <-c.requests:
-			data := createMessage(req.req)
-			_, err := c.conn.Write(data)
-			if err != nil {
-				req.res <- []string{string(protocol.Error) + err.Error()}
-				continue
+			mu.Lock()
+			fmt.Println("got here with data", req.req.Type)
+			if batch == nil {
+				batch = &pb.BatchedRequest{}
+				requests = []clientReq{}
+				// timer = time.AfterFunc(baseWaitTime, func() {
+				// 	mu.Lock()
+				// 	defer mu.Unlock()
+				// 	c.processBatch(batch, requests)
+				// 	batch = nil
+				// 	timer.Reset(baseWaitTime)
+				// })
 			}
 
-			timeout := time.Second * 1
-			batchResponse, err := readFromConnection(c.conn, timeout)
-			if err != nil && !isTimeout(err) {
-				req.res <- []string{string(protocol.Error) + err.Error()}
-				return
+			batch.Operations = append(batch.Operations, req.req)
+			requests = append(requests, req)
+
+			if len(batch.Operations) >= 1 {
+				// timer.Stop()
+				c.processBatch(batch, requests)
+				batch = nil
+				// timer.Reset(baseWaitTime)
 			}
+			mu.Unlock()
+		}
+	}
+}
 
-			responses, err := protocol.SplitBatchResponse(string(batchResponse))
-			if err != nil {
-				req.res <- []string{string(protocol.Error) + err.Error()}
-				return
-			}
+func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
+	if len(requests) == 0 {
+		fmt.Println("no requests")
+		return
+	}
 
-			fmt.Println("Response:", responses)
+	encoded, err := proto.Marshal(batch)
+	if err != nil {
+		batchError(err, requests)
+		return
+	}
 
-			req.res <- responses[0]
+	_, err = c.conn.Write(encoded)
+	if err != nil {
+		batchError(err, requests)
+		return
+	}
+
+	timeout := time.Second * 1
+	responseBytes, err := readFromConnection(c.conn, timeout)
+	if err != nil && !isTimeout(err) {
+		batchError(err, requests)
+		return
+	}
+
+	batchResponse := &pb.BatchedResponse{}
+	err = proto.Unmarshal(responseBytes, batchResponse)
+	if err != nil {
+		batchError(err, requests)
+		return
+	}
+
+	responses := batchResponse.Results
+
+	if len(responses) != len(requests) {
+		err = fmt.Errorf("expected %d responses, received %d", len(requests), len(responses))
+		batchError(err, requests)
+		return
+	}
+
+	propagateBatch(responses, requests)
+}
+
+func batchError(err error, requests []clientReq) {
+	bulkErr := errResponse(err.Error())
+	for _, req := range requests {
+		req.res <- bulkErr
+	}
+}
+
+func propagateBatch(responses []*pb.Result, requests []clientReq) {
+	fmt.Println("definitely got here")
+	for i, res := range responses {
+		req := requests[i]
+		fmt.Println("req message", res.Message, res.Status)
+		if res.Status == pb.Result_FAILURE {
+			req.res <- errResponse(res.Message)
+		} else {
+			req.res <- []string{res.Message}
 		}
 	}
 }
@@ -292,78 +361,3 @@ func isTimeout(err error) bool {
 	netErr, ok := err.(net.Error)
 	return ok && netErr.Timeout()
 }
-
-// func (c *Client) scheduler() {
-// 	bulkRequest, resChannels := c.aggregateRequests(true)
-// 	for {
-// 		select {
-// 		case <-c.shutdown:
-// 			fmt.Println("Shutting down scheduler")
-// 			return
-// 		default:
-// 			c.conn.Write(bulkRequest)
-// 			bulkRequest, resChannels = c.aggregateRequests(false)
-// 			bulkResponse := c.read()
-// 			c.partitionResponses(bulkResponse, resChannels)
-// 		}
-// 	}
-// }
-
-// func (c *Client) read() []byte {
-// 	// c.conn.Read()
-// 	return []byte{}
-// }
-
-// func (c *Client) aggregateRequests(blocking bool) ([]byte, [][]chan string) {
-// 	seen := map[string]int{}
-// 	resChannels := [][]chan string{}
-// 	s := make([]byte, 0)
-
-// 	var (
-// 		req        clientReq
-// 		requestInx int
-// 	)
-
-// 	if blocking {
-// 		req = <-c.requests
-// 	}
-
-// 	for req = range c.requests {
-// 		requestData := req.data
-// 		duplicateInx, dup := seen[requestData]
-// 		if !dup {
-// 			seen[requestData] = requestInx
-
-// 		} else {
-// 			resChannels[duplicateInx] = append(resChannels[duplicateInx], req.res)
-// 			resChannels = append(resChannels)
-// 		}
-// 		s = append(s, i)
-// 		requestInx++
-// 	}
-
-// 	s = addBulkHeader(s, requestInx)
-// 	return s, resChannels
-// }
-
-// func addBulkHeader(s []byte, numRequests int) []byte {
-// 	var (
-// 		buffer bytes.Buffer
-// 	)
-
-// 	buffer.WriteByte(Array)
-// 	buffer.WriteString(strconv.Itoa(numRequests))
-// 	buffer.WriteString(NewLine)
-// 	buffer.Write(s)
-// 	return buffer.Bytes()
-// }
-
-// func (c *Client) partitionResponses(responses []byte, channels [][]chan string) {
-
-// }
-
-// /*
-// thread 1 - main client, sends serial requests to server
-// - constantly waiting for requests
-// thread 2 - scheduler (deduplicates requests)
-// */

@@ -4,12 +4,7 @@ const (
 	PONG string = "PONG"
 	OK   string = "OK"
 
-	PING string = "ping"
-	ECHO string = "echo"
-	GET  string = "get"
-	DEL  string = "del"
-	SET  string = "set"
-	ERR  string = "err"
+	ERR string = "err"
 
 	Array          byte   = '*'
 	Error          byte   = '-'

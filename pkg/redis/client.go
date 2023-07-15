@@ -4,6 +4,7 @@ import (
 	"app/pkg/protocol"
 	pb "app/pkg/protocol/github.com/kevindweb/proto"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -227,11 +228,15 @@ func (c *Client) start() {
 }
 
 func (c *Client) scheduler() {
-	var batch *pb.BatchedRequest
-	var requests []clientReq
-	// var timer *time.Timer
-	// var baseWaitTime = 100 * time.Millisecond // Initial wait time for batching
-	var mu sync.Mutex
+	var (
+		timer *time.Timer
+		mu    sync.Mutex
+
+		batch = &pb.BatchedRequest{
+			Operations: []*pb.Operation{},
+		}
+		requests = []clientReq{}
+	)
 
 	for {
 		select {
@@ -239,36 +244,40 @@ func (c *Client) scheduler() {
 			return
 		case req := <-c.requests:
 			mu.Lock()
-			fmt.Println("got here with data", req.req.Type)
-			if batch == nil {
-				batch = &pb.BatchedRequest{}
-				requests = []clientReq{}
-				// timer = time.AfterFunc(baseWaitTime, func() {
-				// 	mu.Lock()
-				// 	defer mu.Unlock()
-				// 	c.processBatch(batch, requests)
-				// 	batch = nil
-				// 	timer.Reset(baseWaitTime)
-				// })
+			if len(batch.Operations) == 0 {
+				timer = time.AfterFunc(BaseWaitTime, func() {
+					mu.Lock()
+					defer mu.Unlock()
+					c.processBatch(batch, requests)
+					batch.Operations = []*pb.Operation{}
+					requests = []clientReq{}
+					timer.Reset(BaseWaitTime)
+				})
 			}
-
-			batch.Operations = append(batch.Operations, req.req)
-			requests = append(requests, req)
-
-			if len(batch.Operations) >= 1 {
-				// timer.Stop()
-				c.processBatch(batch, requests)
-				batch = nil
-				// timer.Reset(baseWaitTime)
-			}
+			c.processNewRequest(req, batch, &requests, timer)
 			mu.Unlock()
 		}
 	}
 }
 
+func (c *Client) processNewRequest(
+	req clientReq, batch *pb.BatchedRequest, requests *[]clientReq, timer *time.Timer,
+) {
+	batch.Operations = append(batch.Operations, req.req)
+	*requests = append(*requests, req)
+	if len(batch.Operations) < MaxRequestBatch {
+		return
+	}
+
+	timer.Stop()
+	c.processBatch(batch, *requests)
+	batch.Operations = batch.Operations[:0]
+	(*requests) = []clientReq{}
+	timer.Reset(BaseWaitTime)
+}
+
 func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
 	if len(requests) == 0 {
-		fmt.Println("no requests")
 		return
 	}
 
@@ -283,10 +292,10 @@ func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
 		batchError(err, requests)
 		return
 	}
+	now := time.Now()
 
-	timeout := time.Second * 1
-	responseBytes, err := readFromConnection(c.conn, timeout)
-	if err != nil && !isTimeout(err) {
+	responseBytes, err := readFromConnection(c.conn, ReadTimeout)
+	if err != nil {
 		batchError(err, requests)
 		return
 	}
@@ -297,11 +306,22 @@ func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
 		batchError(err, requests)
 		return
 	}
+	fmt.Println("waited", time.Since(now), len(requests), "requests")
+	fmt.Println("size of request", float64(len(encoded))/1000.0)
 
 	responses := batchResponse.Results
 
 	if len(responses) != len(requests) {
-		err = fmt.Errorf("expected %d responses, received %d", len(requests), len(responses))
+		if len(responses) == 1 {
+			err = fmt.Errorf(
+				"received 1 response: (%s) %s, requests: %v",
+				responses[0].Status, responses[0].Message, batch.Operations[0],
+			)
+		} else {
+			err = fmt.Errorf(
+				"expected %d responses, received %d", len(requests), len(responses),
+			)
+		}
 		batchError(err, requests)
 		return
 	}
@@ -317,10 +337,8 @@ func batchError(err error, requests []clientReq) {
 }
 
 func propagateBatch(responses []*pb.Result, requests []clientReq) {
-	fmt.Println("definitely got here")
 	for i, res := range responses {
 		req := requests[i]
-		fmt.Println("req message", res.Message, res.Status)
 		if res.Status == pb.Result_FAILURE {
 			req.res <- errResponse(res.Message)
 		} else {
@@ -330,28 +348,25 @@ func propagateBatch(responses []*pb.Result, requests []clientReq) {
 }
 
 func readFromConnection(conn net.Conn, timeout time.Duration) ([]byte, error) {
-	response := make([]byte, 0)
-
 	err := conn.SetReadDeadline(time.Now().Add(timeout))
 	if err != nil {
-		return response, err
+		return []byte{}, err
 	}
 
-	for {
-		buffer := make([]byte, 1024) // TODO: Adjust the buffer size based on workload
-		n, err := conn.Read(buffer)
-		if err != nil {
-			return response, err
-		}
-
-		if n == 0 {
-			break
-		}
-
-		response = append(response, buffer[:n]...)
+	responseLengthBytes := make([]byte, Uint32Size)
+	_, err = conn.Read(responseLengthBytes)
+	if err != nil {
+		return []byte{}, err
 	}
 
-	return response, nil
+	responseLength := int(binary.LittleEndian.Uint32(responseLengthBytes))
+	responseBytes := make([]byte, responseLength)
+	_, err = conn.Read(responseBytes)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return responseBytes, nil
 }
 
 func isTimeout(err error) bool {

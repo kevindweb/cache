@@ -2,20 +2,25 @@ package redis
 
 import (
 	"app/pkg/protocol"
-	pb "app/pkg/protocol/github.com/kevindweb/proto"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/tidwall/evio"
-	"google.golang.org/protobuf/proto"
 )
 
 type Server struct {
-	Address  string
-	shutdown bool
-	logger   *log.Logger
-	kv       map[string]string
+	Address   string
+	shutdown  bool
+	logger    *log.Logger
+	kv        map[string]string
+	request   protocol.BatchedRequest
+	requests  []protocol.Operation
+	response  protocol.BatchedResponse
+	resBuffer []byte
+	outBuffer []byte
 }
 
 func NewServer(host string, port int) (*Server, error) {
@@ -25,8 +30,14 @@ func NewServer(host string, port int) (*Server, error) {
 
 	return &Server{
 		Address: fmt.Sprintf("%s://%s:%d", DefaultNetwork, host, port),
-		logger:  log.New(nil, "", 0),
+		logger:  log.New(os.Stdout, "", 0),
 		kv:      map[string]string{},
+		request: protocol.BatchedRequest{
+			Operations: make([]protocol.Operation, 10),
+		},
+		response:  protocol.BatchedResponse{},
+		resBuffer: make([]byte, 18000),
+		outBuffer: make([]byte, 18000),
 	}, nil
 }
 
@@ -47,87 +58,89 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 		return
 	}
 
-	batch := &pb.BatchedRequest{}
-	if err := proto.Unmarshal(in, batch); err != nil {
+	if _, err := (&s.request).UnmarshalMsg(in); err != nil {
 		out = s.processErr(err)
 		return
 	}
 
-	request := &request{
-		req: batch.Operations,
-		kv:  s.kv,
-	}
-	if err := request.process(); err != nil {
+	s.requests = s.request.Operations
+	if err := s.process(); err != nil {
 		out = s.processErr(err)
-	} else {
-		out = request.out
+		return
 	}
 
-	s.kv = request.kv
-
+	s.writeLength(s.resBuffer)
+	out = s.resBuffer
 	return
 }
 
+func (s *Server) writeLength(data []byte) {
+	dataLength := len(data)
+	totalLength := Uint32Size + dataLength
+	if cap(s.outBuffer) < totalLength {
+		s.outBuffer = make([]byte, totalLength)
+	}
+	binary.LittleEndian.PutUint32(s.resBuffer[0:Uint32Size], uint32(dataLength))
+	copy(s.resBuffer[Uint32Size:totalLength], data)
+	s.resBuffer = s.resBuffer[:totalLength]
+}
+
 func (s *Server) processErr(err error) []byte {
-	errResponse := &pb.BatchedResponse{
-		Results: []*pb.Result{
-			{
-				Status:  pb.Result_FAILURE,
-				Message: err.Error(),
-			},
-		},
+	s.response.Results = s.response.Results[:0]
+	s.response.Results[0] = protocol.Result{
+		Status:  protocol.FAILURE,
+		Message: err.Error(),
 	}
 
-	encoded, encodeErr := proto.Marshal(errResponse)
-	if err != nil {
+	var encodeErr error
+	if s.resBuffer, encodeErr = s.response.MarshalMsg(s.resBuffer[:0]); err != nil {
 		msg := fmt.Sprintf("processing error: %v, encoding error: %v", err, encodeErr)
 		s.logger.Printf(msg)
 		return []byte(msg)
 	}
 
-	return encoded
+	s.writeLength(s.resBuffer)
+	return s.resBuffer
 }
 
-type request struct {
-	req []*pb.Operation
-	out []byte
-	kv  map[string]string
-}
-
-func (r *request) process() error {
-	results := make([]*pb.Result, len(r.req))
-	for i, op := range r.req {
-		res := &pb.Result{}
-		switch op.Type {
-		case pb.Operation_PING:
-			res.Message = PONG
-		case pb.Operation_SET:
-			res.Message = r.setResponse(op.Key, op.Value)
-		case pb.Operation_GET:
-			msg, err := r.getResponse(op.Key)
-			if err != "" {
-				res.Status = pb.Result_FAILURE
-				res.Message = err
-			} else {
-				res.Message = msg
-			}
-		case pb.Operation_DELETE:
-			res.Message = r.delResponse(op.Key)
-		default:
-			res.Status = pb.Result_FAILURE
-			res.Message = fmt.Sprintf("action undefined: %s", op.Type)
-		}
-		results[i] = res
+func (s *Server) process() error {
+	results := s.response.Results
+	if len(s.requests) > cap(results) {
+		results = make([]protocol.Result, 0, len(s.requests))
 	}
 
-	encoded, err := proto.Marshal(&pb.BatchedResponse{
-		Results: results,
-	})
-	if err != nil {
+	for _, op := range s.requests {
+		res := protocol.Result{}
+		switch op.Type {
+		case protocol.PING:
+			res.Message = PONG
+		case protocol.SET:
+			res.Message = s.setResponse(op.Key, op.Value)
+		case protocol.GET:
+			msg, err := s.getResponse(op.Key)
+			if err != "" {
+				res.Status = protocol.FAILURE
+				res.Message = err
+			} else {
+				res.Message = string(msg)
+			}
+		case protocol.DELETE:
+			res.Message = s.delResponse(op.Key)
+		default:
+			res.Status = protocol.FAILURE
+			res.Message = fmt.Sprintf("action undefined: %s", op.Type)
+		}
+		results = append(results, res)
+	}
+
+	s.response.Results = results
+
+	var err error
+	if s.resBuffer, err = s.response.MarshalMsg(s.resBuffer[:0]); err != nil {
 		return err
 	}
 
-	r.out = encoded
+	s.response.Results = results[:0]
 	return nil
 }
 
@@ -135,21 +148,20 @@ func errResponse(err string) []string {
 	return []string{fmt.Sprintf("%c%s", protocol.Error, err)}
 }
 
-func (r *request) setResponse(key, value string) string {
-	r.kv[key] = value
+func (s *Server) setResponse(key string, value string) string {
+	s.kv[key] = value
 	return OK
 }
 
-func (r *request) getResponse(key string) (string, string) {
-	var val string
-	var ok bool
-	if val, ok = r.kv[key]; !ok {
+func (s *Server) getResponse(key string) (string, string) {
+	if val, ok := s.kv[key]; !ok {
 		return "", fmt.Sprintf("key %s not set", key)
+	} else {
+		return val, ""
 	}
-	return val, ""
 }
 
-func (r *request) delResponse(key string) string {
-	delete(r.kv, key)
+func (s *Server) delResponse(key string) string {
+	delete(s.kv, key)
 	return OK
 }

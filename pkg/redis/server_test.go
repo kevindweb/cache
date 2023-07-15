@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"app/pkg/protocol"
 	"fmt"
 	"io"
 	"math/rand"
@@ -361,15 +362,35 @@ func TestClientServerTeardown(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// func BenchmarkProcessSet(b *testing.B) {
-// 	setCommand := []byte("*3\r\n$3\r\nset\r\n$5\r\nworld\r\n$5\r\nhello\r\n")
-// 	b.ResetTimer()
-// 	server := &Server{
-// 		kv:     map[string]string{},
-// 		reqBuf: bytes.NewBuffer(make([]byte, BufferSize)),
-// 	}
-// 	for i := 0; i < b.N; i++ {
-// 		server.eventHandler(nil, setCommand)
-// 	}
-// 	b.StopTimer()
-// }
+func BenchmarkProcessSet(b *testing.B) {
+	batchSize := 10
+	ops := []protocol.Operation{}
+	for i := 0; i < batchSize; i++ {
+		ops = append(ops, protocol.Operation{
+			Type:  protocol.SET,
+			Key:   "world",
+			Value: "hello",
+		})
+	}
+
+	batch := protocol.BatchedRequest{
+		Operations: ops,
+	}
+
+	var encoded []byte
+	var err error
+	if encoded, err = batch.MarshalMsg(nil); err != nil {
+		b.Fatal(err)
+	}
+
+	server, err := NewServer(DefaultHost, DefaultPort)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		server.eventHandler(nil, encoded)
+	}
+	b.StopTimer()
+}

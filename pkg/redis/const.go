@@ -15,17 +15,27 @@ const (
 
 	ArgLength  int = 10
 	BufferSize int = 256
+	Uint32Size int = 4
 )
 
 const (
 	DialTimeout   time.Duration = time.Second * 2
 	ConnRetryWait time.Duration = time.Millisecond * 10
 
-	MaxRequestBatch int = 10
+	// max protobuf size is 2^16 bytes (7279 * 9 bytes/message)
+	MaxRequestBatch int = 7200
 
 	DefaultNetwork string = "tcp"
 	DefaultHost    string = "localhost"
 	DefaultPort    int    = 6379
+)
+
+var (
+	ReadTimeout time.Duration = time.Second * 1
+)
+
+const (
+	BaseWaitTime = 500 * time.Millisecond
 )
 
 const (

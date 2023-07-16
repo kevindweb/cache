@@ -33,7 +33,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	for i := 9999; i < 10000; i++ {
+	for i := 1; i < 2; i++ {
 		now := time.Now()
 		executeRandom(i, c)
 		duration := time.Since(now)

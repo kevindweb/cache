@@ -4,6 +4,10 @@ import "fmt"
 
 //go:generate msgp
 
+const (
+	RequestSizeBytes int = 30
+)
+
 type BatchedRequest struct {
 	Operations []Operation `msg:"operations"`
 }
@@ -48,6 +52,17 @@ const (
 	SUCCESS ResultStatus = iota
 	FAILURE
 )
+
+func (op ResultStatus) String() string {
+	switch op {
+	case SUCCESS:
+		return "SUCCESS"
+	case FAILURE:
+		return "FAILURE"
+	default:
+		return fmt.Sprintf("%d", int(op))
+	}
+}
 
 type Result struct {
 	Status  ResultStatus `msg:"status"`

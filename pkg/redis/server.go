@@ -33,11 +33,13 @@ func NewServer(host string, port int) (*Server, error) {
 		logger:  log.New(os.Stdout, "", 0),
 		kv:      map[string]string{},
 		request: protocol.BatchedRequest{
-			Operations: make([]protocol.Operation, 10),
+			Operations: make([]protocol.Operation, MaxRequestBatch),
 		},
-		response:  protocol.BatchedResponse{},
-		resBuffer: make([]byte, 18000),
-		outBuffer: make([]byte, 18000),
+		response: protocol.BatchedResponse{
+			Results: make([]protocol.Result, 0, MaxRequestBatch),
+		},
+		resBuffer: make([]byte, MaxRequestBatch*protocol.RequestSizeBytes),
+		outBuffer: make([]byte, MaxRequestBatch*protocol.RequestSizeBytes),
 	}, nil
 }
 
@@ -69,20 +71,19 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 		return
 	}
 
-	s.writeLength(s.resBuffer)
-	out = s.resBuffer
+	out = s.writeLength(s.resBuffer)
 	return
 }
 
-func (s *Server) writeLength(data []byte) {
+func (s *Server) writeLength(data []byte) []byte {
 	dataLength := len(data)
 	totalLength := Uint32Size + dataLength
 	if cap(s.outBuffer) < totalLength {
 		s.outBuffer = make([]byte, totalLength)
 	}
-	binary.LittleEndian.PutUint32(s.resBuffer[0:Uint32Size], uint32(dataLength))
-	copy(s.resBuffer[Uint32Size:totalLength], data)
-	s.resBuffer = s.resBuffer[:totalLength]
+	binary.LittleEndian.PutUint32(s.outBuffer[:Uint32Size], uint32(dataLength))
+	copy(s.outBuffer[Uint32Size:totalLength], data)
+	return s.outBuffer[:totalLength]
 }
 
 func (s *Server) processErr(err error) []byte {
@@ -99,14 +100,13 @@ func (s *Server) processErr(err error) []byte {
 		return []byte(msg)
 	}
 
-	s.writeLength(s.resBuffer)
-	return s.resBuffer
+	return s.writeLength(s.resBuffer)
 }
 
 func (s *Server) process() error {
-	results := s.response.Results
+	results := s.response.Results[:0]
 	if len(s.requests) > cap(results) {
-		results = make([]protocol.Result, 0, len(s.requests))
+		results = make([]protocol.Result, len(s.requests))
 	}
 
 	for _, op := range s.requests {
@@ -133,14 +133,12 @@ func (s *Server) process() error {
 		results = append(results, res)
 	}
 
-	s.response.Results = results
-
 	var err error
+	s.response.Results = results
 	if s.resBuffer, err = s.response.MarshalMsg(s.resBuffer[:0]); err != nil {
 		return err
 	}
 
-	s.response.Results = results[:0]
 	return nil
 }
 

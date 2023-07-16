@@ -2,7 +2,6 @@ package redis
 
 import (
 	"app/pkg/protocol"
-	pb "app/pkg/protocol/github.com/kevindweb/proto"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -10,8 +9,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"google.golang.org/protobuf/proto"
 )
 
 type Client struct {
@@ -85,19 +82,19 @@ func (c *Client) Ping() error {
 }
 
 type clientReq struct {
-	req *pb.Operation
+	req protocol.Operation
 	res chan []string
 }
 
 func (c *Client) pingRequest() error {
-	pingOp := &pb.Operation{
-		Type: pb.Operation_PING,
+	pingOp := protocol.Operation{
+		Type: protocol.PING,
 	}
 	response := c.sendRequest(pingOp)
 	return expectResponse(PING, PONG, response)
 }
 
-func (c *Client) sendRequest(op *pb.Operation) []string {
+func (c *Client) sendRequest(op protocol.Operation) []string {
 	resChan := make(chan []string, 1)
 	c.requests <- clientReq{
 		req: op,
@@ -128,8 +125,8 @@ func (c *Client) Get(key string) (string, error) {
 		return "", err
 	}
 
-	getOp := &pb.Operation{
-		Type: pb.Operation_GET,
+	getOp := protocol.Operation{
+		Type: protocol.GET,
 		Key:  key,
 	}
 	response := c.sendRequest(getOp)
@@ -155,8 +152,8 @@ func (c *Client) Set(key, val string) error {
 		return err
 	}
 
-	setOp := &pb.Operation{
-		Type:  pb.Operation_SET,
+	setOp := protocol.Operation{
+		Type:  protocol.SET,
 		Key:   key,
 		Value: val,
 	}
@@ -183,8 +180,8 @@ func (c *Client) Del(key string) error {
 		return err
 	}
 
-	delOp := &pb.Operation{
-		Type: pb.Operation_DELETE,
+	delOp := protocol.Operation{
+		Type: protocol.DELETE,
 		Key:  key,
 	}
 	response := c.sendRequest(delOp)
@@ -232,8 +229,8 @@ func (c *Client) scheduler() {
 		timer *time.Timer
 		mu    sync.Mutex
 
-		batch = &pb.BatchedRequest{
-			Operations: []*pb.Operation{},
+		batch = &protocol.BatchedRequest{
+			Operations: []protocol.Operation{},
 		}
 		requests = []clientReq{}
 	)
@@ -249,7 +246,7 @@ func (c *Client) scheduler() {
 					mu.Lock()
 					defer mu.Unlock()
 					c.processBatch(batch, requests)
-					batch.Operations = []*pb.Operation{}
+					batch.Operations = []protocol.Operation{}
 					requests = []clientReq{}
 					timer.Reset(BaseWaitTime)
 				})
@@ -261,7 +258,7 @@ func (c *Client) scheduler() {
 }
 
 func (c *Client) processNewRequest(
-	req clientReq, batch *pb.BatchedRequest, requests *[]clientReq, timer *time.Timer,
+	req clientReq, batch *protocol.BatchedRequest, requests *[]clientReq, timer *time.Timer,
 ) {
 	batch.Operations = append(batch.Operations, req.req)
 	*requests = append(*requests, req)
@@ -276,12 +273,12 @@ func (c *Client) processNewRequest(
 	timer.Reset(BaseWaitTime)
 }
 
-func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
+func (c *Client) processBatch(batch *protocol.BatchedRequest, requests []clientReq) {
 	if len(requests) == 0 {
 		return
 	}
 
-	encoded, err := proto.Marshal(batch)
+	encoded, err := batch.MarshalMsg(nil)
 	if err != nil {
 		batchError(err, requests)
 		return
@@ -300,9 +297,8 @@ func (c *Client) processBatch(batch *pb.BatchedRequest, requests []clientReq) {
 		return
 	}
 
-	batchResponse := &pb.BatchedResponse{}
-	err = proto.Unmarshal(responseBytes, batchResponse)
-	if err != nil {
+	batchResponse := &protocol.BatchedResponse{}
+	if _, err := batchResponse.UnmarshalMsg(responseBytes); err != nil {
 		batchError(err, requests)
 		return
 	}
@@ -336,10 +332,10 @@ func batchError(err error, requests []clientReq) {
 	}
 }
 
-func propagateBatch(responses []*pb.Result, requests []clientReq) {
+func propagateBatch(responses []protocol.Result, requests []clientReq) {
 	for i, res := range responses {
 		req := requests[i]
-		if res.Status == pb.Result_FAILURE {
+		if res.Status == protocol.FAILURE {
 			req.res <- errResponse(res.Message)
 		} else {
 			req.res <- []string{res.Message}

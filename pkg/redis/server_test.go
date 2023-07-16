@@ -363,7 +363,7 @@ func TestClientServerTeardown(t *testing.T) {
 }
 
 func BenchmarkProcessSet(b *testing.B) {
-	batchSize := 10
+	batchSize := 1
 	ops := []protocol.Operation{}
 	for i := 0; i < batchSize; i++ {
 		ops = append(ops, protocol.Operation{

@@ -2,7 +2,6 @@ package redis
 
 import (
 	"app/pkg/protocol"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,10 +11,7 @@ import (
 )
 
 type Client struct {
-	url      string
-	conn     net.Conn
-	buf      *bytes.Buffer
-	shutdown chan bool
+	workers  []Worker
 	requests chan clientReq
 }
 
@@ -24,21 +20,17 @@ func NewClient(host string, port int) (*Client, error) {
 		return nil, errors.New(InvalidAddrErr)
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
-	conn, err := connectWithTimeout(addr, DialTimeout)
+	requests := make(chan clientReq, MaxRequestBatch*MaxConnectionPool)
+	pool, err := createWorkers(requests, host, port)
 	if err != nil {
 		return nil, err
 	}
 
 	c := &Client{
-		url:      addr,
-		conn:     conn,
-		shutdown: make(chan bool, 1),
-		requests: make(chan clientReq),
-		buf:      bytes.NewBuffer(make([]byte, BufferSize)),
+		workers:  pool,
+		requests: requests,
 	}
 
-	c.initChannels()
 	c.start()
 
 	if err := c.Ping(); err != nil {
@@ -48,7 +40,30 @@ func NewClient(host string, port int) (*Client, error) {
 	return c, nil
 }
 
-func connectWithTimeout(addr string, timeout time.Duration) (net.Conn, error) {
+func createWorkers(
+	requests chan clientReq, host string, port int,
+) ([]Worker, error) {
+	addr := fmt.Sprintf("%s:%d", host, port)
+	pool := make([]Worker, 0, MaxConnectionPool)
+	for i := 0; i < MaxConnectionPool; i++ {
+		conn, err := connectWithTimeout(addr, DialTimeout)
+		if err != nil {
+			return nil, err
+		}
+
+		worker := Worker{
+			conn:     conn,
+			shutdown: make(chan bool, 1),
+			requests: requests,
+		}
+		pool = append(pool, worker)
+	}
+	return pool, nil
+}
+
+func connectWithTimeout(
+	addr string, timeout time.Duration,
+) (net.Conn, error) {
 	timedOut := time.Now().Add(timeout)
 	for {
 		conn, err := net.DialTimeout(DefaultNetwork, addr, timeout)
@@ -66,11 +81,6 @@ func connectWithTimeout(addr string, timeout time.Duration) (net.Conn, error) {
 
 		time.Sleep(ConnRetryWait)
 	}
-}
-
-func (c *Client) initChannels() {
-	c.shutdown = make(chan bool, 1)
-	c.requests = make(chan clientReq, MaxRequestBatch)
 }
 
 func (c *Client) Ping() error {
@@ -140,7 +150,8 @@ func getResponse(key string, res []string) (string, error) {
 
 	if len(res) != 1 || res[0] == "" {
 		return "", fmt.Errorf(
-			"expected value for key %s, received %d results: %v", key, len(res), res,
+			"expected value for key %s, received %d results: %v",
+			key, len(res), res,
 		)
 	}
 
@@ -203,7 +214,7 @@ func expectResponse(command, expected string, res []string) error {
 }
 
 func (c *Client) validateClient() error {
-	if c.url == "" || c.conn == nil {
+	if len(c.workers) == 0 {
 		return errors.New(ClientUninitializedErr)
 	}
 
@@ -211,20 +222,30 @@ func (c *Client) validateClient() error {
 }
 
 func (c *Client) Stop() error {
-	err := c.conn.Close()
-	if err != nil {
-		return err
+	for _, worker := range c.workers {
+		worker.shutdown <- true
+		if err := worker.conn.Close(); err != nil {
+			return err
+		}
 	}
 
-	c.shutdown <- true
 	return nil
 }
 
 func (c *Client) start() {
-	go c.scheduler()
+	for _, worker := range c.workers {
+		worker := worker
+		go worker.scheduler()
+	}
 }
 
-func (c *Client) scheduler() {
+type Worker struct {
+	conn     net.Conn
+	shutdown chan bool
+	requests chan clientReq
+}
+
+func (w *Worker) scheduler() {
 	var (
 		timer *time.Timer
 		mu    sync.Mutex
@@ -237,28 +258,31 @@ func (c *Client) scheduler() {
 
 	for {
 		select {
-		case <-c.shutdown:
+		case <-w.shutdown:
 			return
-		case req := <-c.requests:
+		case req := <-w.requests:
 			mu.Lock()
 			if len(batch.Operations) == 0 {
 				timer = time.AfterFunc(BaseWaitTime, func() {
 					mu.Lock()
 					defer mu.Unlock()
-					c.processBatch(batch, requests)
+					w.processBatch(batch, requests)
 					batch.Operations = []protocol.Operation{}
 					requests = []clientReq{}
 					timer.Reset(BaseWaitTime)
 				})
 			}
-			c.processNewRequest(req, batch, &requests, timer)
+			w.processNewRequest(req, batch, &requests, timer)
 			mu.Unlock()
 		}
 	}
 }
 
-func (c *Client) processNewRequest(
-	req clientReq, batch *protocol.BatchedRequest, requests *[]clientReq, timer *time.Timer,
+func (w *Worker) processNewRequest(
+	req clientReq,
+	batch *protocol.BatchedRequest,
+	requests *[]clientReq,
+	timer *time.Timer,
 ) {
 	batch.Operations = append(batch.Operations, req.req)
 	*requests = append(*requests, req)
@@ -267,13 +291,15 @@ func (c *Client) processNewRequest(
 	}
 
 	timer.Stop()
-	c.processBatch(batch, *requests)
+	w.processBatch(batch, *requests)
 	batch.Operations = batch.Operations[:0]
 	(*requests) = []clientReq{}
 	timer.Reset(BaseWaitTime)
 }
 
-func (c *Client) processBatch(batch *protocol.BatchedRequest, requests []clientReq) {
+func (w *Worker) processBatch(
+	batch *protocol.BatchedRequest, requests []clientReq,
+) {
 	if len(requests) == 0 {
 		return
 	}
@@ -284,14 +310,13 @@ func (c *Client) processBatch(batch *protocol.BatchedRequest, requests []clientR
 		return
 	}
 
-	_, err = c.conn.Write(encoded)
+	_, err = w.conn.Write(encoded)
 	if err != nil {
 		batchError(err, requests)
 		return
 	}
-	now := time.Now()
 
-	responseBytes, err := readFromConnection(c.conn, ReadTimeout)
+	responseBytes, err := readFromConnection(w.conn, ReadTimeout)
 	if err != nil {
 		batchError(err, requests)
 		return
@@ -302,8 +327,6 @@ func (c *Client) processBatch(batch *protocol.BatchedRequest, requests []clientR
 		batchError(err, requests)
 		return
 	}
-	fmt.Println("waited", time.Since(now), len(requests), "requests")
-	fmt.Println("size of request", float64(len(encoded))/1000.0)
 
 	responses := batchResponse.Results
 
@@ -311,11 +334,14 @@ func (c *Client) processBatch(batch *protocol.BatchedRequest, requests []clientR
 		if len(responses) == 1 {
 			err = fmt.Errorf(
 				"received 1 response: (%s) %s, requests: %v",
-				responses[0].Status, responses[0].Message, batch.Operations[0],
+				responses[0].Status,
+				responses[0].Message,
+				batch.Operations[0],
 			)
 		} else {
 			err = fmt.Errorf(
-				"expected %d responses, received %d", len(requests), len(responses),
+				"expected %d responses, received %d",
+				len(requests), len(responses),
 			)
 		}
 		batchError(err, requests)

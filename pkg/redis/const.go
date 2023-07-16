@@ -11,19 +11,13 @@ const (
 	GET  string = "get"
 	DEL  string = "del"
 	SET  string = "set"
-	ERR  string = "err"
 
-	ArgLength  int = 10
-	BufferSize int = 256
 	Uint32Size int = 4
 )
 
 const (
 	DialTimeout   time.Duration = time.Second * 2
 	ConnRetryWait time.Duration = time.Millisecond * 10
-
-	// max protobuf size is 2^16 bytes (7279 * 9 bytes/message)
-	MaxRequestBatch int = 7200
 
 	DefaultNetwork string = "tcp"
 	DefaultHost    string = "localhost"
@@ -35,7 +29,9 @@ var (
 )
 
 const (
-	BaseWaitTime = 500 * time.Millisecond
+	MaxConnectionPool int           = 20
+	MaxRequestBatch   int           = 200
+	BaseWaitTime      time.Duration = 500 * time.Microsecond
 )
 
 const (

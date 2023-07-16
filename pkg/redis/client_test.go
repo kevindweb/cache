@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,8 +9,6 @@ import (
 func setupClient() *Client {
 	return &Client{
 		requests: make(chan clientReq),
-		url:      "localhost:1234",
-		conn:     &net.TCPConn{},
 	}
 }
 

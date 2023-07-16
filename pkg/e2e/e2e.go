@@ -1,4 +1,4 @@
-package main
+package e2e
 
 import (
 	"app/pkg/redis"
@@ -9,26 +9,34 @@ import (
 )
 
 func main() {
-	rand.Seed(time.Now().Unix())
-	runBenchmark()
+	s := initializeBenchmark(redis.DefaultPort)
+	runBenchmark(redis.DefaultPort)
+	s.Stop()
 }
 
-func runBenchmark() {
-	s, err := redis.NewServer(redis.DefaultHost, redis.DefaultPort)
+func initializeBenchmark(port int) *redis.Server {
+	rand.Seed(time.Now().Unix())
+	s, err := redis.NewServer(redis.DefaultHost, port)
 	handleErr(err)
 
 	go func() {
 		err := s.Start()
-		handleErr(err)
+		if err != nil {
+			panic(err)
+		}
 	}()
 
-	c, err := redis.NewClient(redis.DefaultHost, redis.DefaultPort)
+	return s
+}
+
+func runBenchmark(port int) {
+	_, err := redis.NewClient(redis.DefaultHost, port)
 	handleErr(err)
 
-	benchmarkRandom(c)
+	// benchmarkRandom(c)
 
-	s.Stop()
-	handleErr(c.Stop())
+	// err = c.Stop()
+	// handleErr(err)
 }
 
 func benchmarkRandom(c *redis.Client) {
@@ -41,20 +49,19 @@ func benchmarkRandom(c *redis.Client) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	for i := 1; i < 10; i++ {
+	for i := 1; i < 2; i++ {
 		now := time.Now()
-		group := rand.Intn(100000) + 50
-		executeRandom(group, c)
+		executeRandom(i, c)
 		duration := time.Since(now)
 		ms := float64(duration.Nanoseconds()) / 1000000.0
 		if ms > highest {
 			highest = ms
-			highestGroup = group
+			highestGroup = i
 		}
 
 		if ms < lowest {
 			lowest = ms
-			lowestGroup = group
+			lowestGroup = i
 		}
 	}
 
@@ -70,7 +77,8 @@ func handleErr(err error) {
 
 func executeRandom(n int, c *redis.Client) {
 	var wg sync.WaitGroup
-	fns := []func(*redis.Client){get, set}
+	fns := []func(*redis.Client){get}
+	// fns := []func(*redis.Client){ping, set, get}
 	for i := 0; i < n; i++ {
 		fn := fns[rand.Intn(len(fns))]
 		wg.Add(1)
@@ -90,6 +98,12 @@ func set(c *redis.Client) {
 
 func get(c *redis.Client) {
 	if _, err := c.Get("key"); err != nil {
+		panic(err)
+	}
+}
+
+func ping(c *redis.Client) {
+	if err := c.Ping(); err != nil {
 		panic(err)
 	}
 }

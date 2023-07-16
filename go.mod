@@ -4,11 +4,10 @@ go 1.19
 
 require (
 	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/tinylib/msgp v1.1.8
-	google.golang.org/protobuf v1.31.0
+	github.com/google/go-cmp v0.5.9
 	github.com/stretchr/testify v1.8.4
 	github.com/tidwall/evio v1.0.8
-	github.com/google/go-cmp v0.5.9
+	github.com/tinylib/msgp v1.1.8
 )
 
 require (

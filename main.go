@@ -1,7 +1,7 @@
 package main
 
 import (
-	"app/pkg/redis"
+	"cache/pkg/redis"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -14,21 +14,41 @@ func main() {
 }
 
 func runBenchmark() {
+	server := startServer()
+	defer server.Stop()
+
+	client := createClient()
+	defer func() {
+		if err := client.Stop(); err != nil {
+			panic(err)
+		}
+	}()
+
+	benchmarkRandom(client)
+}
+
+func startServer() *redis.Server {
 	s, err := redis.NewServer(redis.DefaultHost, redis.DefaultPort)
-	handleErr(err)
+	if err != nil {
+		panic(err)
+	}
 
 	go func() {
 		err := s.Start()
-		handleErr(err)
+		if err != nil {
+			panic(err)
+		}
 	}()
+	return s
+}
 
+func createClient() *redis.Client {
 	c, err := redis.NewClient(redis.DefaultHost, redis.DefaultPort)
-	handleErr(err)
+	if err != nil {
+		panic(err)
+	}
 
-	benchmarkRandom(c)
-
-	s.Stop()
-	handleErr(c.Stop())
+	return c
 }
 
 func benchmarkRandom(c *redis.Client) {
@@ -60,12 +80,6 @@ func benchmarkRandom(c *redis.Client) {
 
 	fmt.Printf("Lowest time: %fms with group %d\n", lowest, lowestGroup)
 	fmt.Printf("Highest time: %fms with group %d\n", highest, highestGroup)
-}
-
-func handleErr(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 
 func executeRandom(n int, c *redis.Client) {

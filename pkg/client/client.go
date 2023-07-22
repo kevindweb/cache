@@ -38,13 +38,23 @@ func fillDefaultOptions(opts *Options) Options {
 	}
 
 	if opts.Network == "" {
-		opts.Host = constants.DefaultNetwork
+		opts.Network = constants.DefaultNetwork
 	}
 
 	return *opts
 }
 
-func NewClient(opts Options) (*Client, error) {
+func StartDefault() (*Client, error) {
+	c, err := New(Options{})
+	if err != nil {
+		return nil, err
+	}
+
+	c.start()
+	return c, c.Ping()
+}
+
+func New(opts Options) (*Client, error) {
 	opts = fillDefaultOptions(&opts)
 	maxClientRequests := constants.MaxRequestBatch * constants.MaxConnectionPool
 	requests := make(chan clientReq, maxClientRequests)
@@ -53,18 +63,10 @@ func NewClient(opts Options) (*Client, error) {
 		return nil, err
 	}
 
-	c := &Client{
+	return &Client{
 		workers:  pool,
 		requests: requests,
-	}
-
-	c.start()
-
-	if err := c.Ping(); err != nil {
-		return nil, err
-	}
-
-	return c, nil
+	}, nil
 }
 
 func createWorkers(

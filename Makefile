@@ -6,7 +6,6 @@ BINARY_NAME := cache
 # ==================================================================================== #
 
 ## help: print this help message
-
 .PHONY: confirm
 confirm:
 	@echo -n 'Are you sure? [y/N] ' && read ans && [ $${ans:-N} = y ]
@@ -45,6 +44,15 @@ audit:
 # ==================================================================================== #
 # DEVELOPMENT
 # ==================================================================================== #
+
+## clean: clean caches
+.PHONY: clean
+clean:
+	go clean -testcache
+
+## cleantest: clean testcache and run tests
+.PHONY: cleantest
+cleantest: clean test
 
 ## test: run all tests
 .PHONY: test

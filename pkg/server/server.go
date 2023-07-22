@@ -44,13 +44,29 @@ func fillDefaultOptions(opts *Options) Options {
 	}
 
 	if opts.Network == "" {
-		opts.Host = constants.DefaultNetwork
+		opts.Network = constants.DefaultNetwork
 	}
 
 	return *opts
 }
 
-func NewServer(opts Options) (*Server, error) {
+func StartDefault() (*Server, error) {
+	s, err := New(Options{})
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		err := s.Start()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	return s, nil
+}
+
+func New(opts Options) (*Server, error) {
 	opts = fillDefaultOptions(&opts)
 	bufferSize := constants.MaxRequestBatch * constants.RequestSizeBytes
 	return &Server{

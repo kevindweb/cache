@@ -6,12 +6,6 @@ import (
 
 //go:generate msgp
 
-const (
-	Error byte = '-'
-
-	RequestSizeBytes int = 30
-)
-
 type BatchedRequest struct {
 	Operations []Operation `msg:"operations"`
 }

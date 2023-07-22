@@ -1,9 +1,9 @@
 package redis
 
 import (
-	"app/pkg/protocol"
+	"cache/internal/constants"
+	"cache/internal/protocol"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -23,23 +23,47 @@ type Server struct {
 	outBuffer []byte
 }
 
-func NewServer(host string, port int) (*Server, error) {
-	if host == "" || port == 0 {
-		return nil, errors.New(InvalidAddrErr)
+type Options struct {
+	Host    string
+	Port    int
+	Network string
+}
+
+func fillDefaultOptions(opts *Options) Options {
+	if opts == nil {
+		opts = &Options{}
 	}
 
+	if opts.Host == "" {
+		opts.Host = constants.DefaultHost
+	}
+
+	if opts.Port == 0 {
+		opts.Port = constants.DefaultPort
+	}
+
+	if opts.Network == "" {
+		opts.Host = constants.DefaultNetwork
+	}
+
+	return *opts
+}
+
+func NewServer(opts Options) (*Server, error) {
+	opts = fillDefaultOptions(&opts)
+	bufferSize := constants.MaxRequestBatch * constants.RequestSizeBytes
 	return &Server{
-		Address: fmt.Sprintf("%s://%s:%d", DefaultNetwork, host, port),
+		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
 		logger:  log.New(os.Stdout, "", 0),
 		kv:      map[string]string{},
 		request: protocol.BatchedRequest{
-			Operations: make([]protocol.Operation, MaxRequestBatch),
+			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
 		},
 		response: protocol.BatchedResponse{
-			Results: make([]protocol.Result, 0, MaxRequestBatch),
+			Results: make([]protocol.Result, 0, constants.MaxRequestBatch),
 		},
-		resBuffer: make([]byte, MaxRequestBatch*protocol.RequestSizeBytes),
-		outBuffer: make([]byte, MaxRequestBatch*protocol.RequestSizeBytes),
+		resBuffer: make([]byte, bufferSize),
+		outBuffer: make([]byte, bufferSize),
 	}, nil
 }
 
@@ -77,12 +101,12 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 
 func (s *Server) writeLength(data []byte) []byte {
 	dataLength := len(data)
-	totalLength := Uint32Size + dataLength
+	totalLength := constants.HeaderSize + dataLength
 	if cap(s.outBuffer) < totalLength {
 		s.outBuffer = make([]byte, totalLength)
 	}
-	binary.LittleEndian.PutUint32(s.outBuffer[:Uint32Size], uint32(dataLength))
-	copy(s.outBuffer[Uint32Size:totalLength], data)
+	binary.LittleEndian.PutUint32(s.outBuffer[:constants.HeaderSize], uint32(dataLength))
+	copy(s.outBuffer[constants.HeaderSize:totalLength], data)
 	return s.outBuffer[:totalLength]
 }
 
@@ -113,7 +137,7 @@ func (s *Server) process() error {
 		res := protocol.Result{}
 		switch op.Type {
 		case protocol.PING:
-			res.Message = PONG
+			res.Message = constants.PONG
 		case protocol.SET:
 			res.Message = s.setResponse(op.Key, op.Value)
 		case protocol.GET:
@@ -142,13 +166,9 @@ func (s *Server) process() error {
 	return nil
 }
 
-func errResponse(err string) []string {
-	return []string{fmt.Sprintf("%c%s", protocol.Error, err)}
-}
-
 func (s *Server) setResponse(key string, value string) string {
 	s.kv[key] = value
-	return OK
+	return constants.OK
 }
 
 func (s *Server) getResponse(key string) (string, string) {
@@ -161,5 +181,5 @@ func (s *Server) getResponse(key string) (string, string) {
 
 func (s *Server) delResponse(key string) string {
 	delete(s.kv, key)
-	return OK
+	return constants.OK
 }

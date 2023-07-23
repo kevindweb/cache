@@ -3,6 +3,7 @@ module cache
 go 1.20
 
 require (
+	github.com/google/go-cmp v0.5.9
 	github.com/google/uuid v1.3.0
 	github.com/tidwall/evio v1.0.8
 	github.com/tinylib/msgp v1.1.8

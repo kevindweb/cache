@@ -7,3 +7,9 @@ type KeyValue interface {
 	Get([]byte) ([]byte, error)
 	Del([]byte) error
 }
+
+var (
+	Caches = []KeyValue{
+		&CacheMap{},
+	}
+)

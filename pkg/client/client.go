@@ -50,7 +50,7 @@ func StartDefault() (*Client, error) {
 		return nil, err
 	}
 
-	c.start()
+	c.Start()
 	return c, c.Ping()
 }
 
@@ -166,7 +166,7 @@ func (c *Client) Get(key string) (string, error) {
 
 	getOp := protocol.Operation{
 		Type: protocol.GET,
-		Key:  key,
+		Key:  []byte(key),
 	}
 	response := c.sendRequest(getOp)
 	return getResponse(key, response)
@@ -194,8 +194,8 @@ func (c *Client) Set(key, val string) error {
 
 	setOp := protocol.Operation{
 		Type:  protocol.SET,
-		Key:   key,
-		Value: val,
+		Key:   []byte(key),
+		Value: []byte(val),
 	}
 	response := c.sendRequest(setOp)
 	return expectResponse(constants.SET, constants.OK, response)
@@ -222,7 +222,7 @@ func (c *Client) Del(key string) error {
 
 	delOp := protocol.Operation{
 		Type: protocol.DELETE,
-		Key:  key,
+		Key:  []byte(key),
 	}
 	response := c.sendRequest(delOp)
 	return expectResponse(constants.DEL, constants.OK, response)
@@ -261,7 +261,7 @@ func (c *Client) Stop() error {
 	return nil
 }
 
-func (c *Client) start() {
+func (c *Client) Start() {
 	for _, worker := range c.workers {
 		worker := worker
 		go worker.scheduler()
@@ -390,10 +390,11 @@ func batchError(err error, requests []clientReq) {
 func propagateBatch(responses []protocol.Result, requests []clientReq) {
 	for i, res := range responses {
 		req := requests[i]
+		msg := string(res.Message)
 		if res.Status == protocol.FAILURE {
-			req.res <- util.ErrResponse(res.Message)
+			req.res <- util.ErrResponse(msg)
 		} else {
-			req.res <- []string{res.Message}
+			req.res <- []string{msg}
 		}
 	}
 }

@@ -36,8 +36,8 @@ func (op OperationType) String() string {
 
 type Operation struct {
 	Type  OperationType `msg:"type"`
-	Key   string        `msg:"key"`
-	Value string        `msg:"value"`
+	Key   []byte        `msg:"key"`
+	Value []byte        `msg:"value"`
 }
 
 type BatchedResponse struct {
@@ -64,5 +64,5 @@ func (op ResultStatus) String() string {
 
 type Result struct {
 	Status  ResultStatus `msg:"status"`
-	Message string       `msg:"message"`
+	Message []byte       `msg:"message"`
 }

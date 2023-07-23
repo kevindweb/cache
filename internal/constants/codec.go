@@ -17,3 +17,8 @@ const (
 	DEL  = "del"
 	SET  = "set"
 )
+
+var (
+	PONG_B = []byte(PONG)
+	OK_B   = []byte(OK)
+)

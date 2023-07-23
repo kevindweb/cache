@@ -62,13 +62,13 @@ func (z *BatchedRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 							z.Operations[za0001].Type = OperationType(zb0004)
 						}
 					case "key":
-						z.Operations[za0001].Key, err = dc.ReadString()
+						z.Operations[za0001].Key, err = dc.ReadBytes(z.Operations[za0001].Key)
 						if err != nil {
 							err = msgp.WrapError(err, "Operations", za0001, "Key")
 							return
 						}
 					case "value":
-						z.Operations[za0001].Value, err = dc.ReadString()
+						z.Operations[za0001].Value, err = dc.ReadBytes(z.Operations[za0001].Value)
 						if err != nil {
 							err = msgp.WrapError(err, "Operations", za0001, "Value")
 							return
@@ -123,7 +123,7 @@ func (z *BatchedRequest) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.Operations[za0001].Key)
+		err = en.WriteBytes(z.Operations[za0001].Key)
 		if err != nil {
 			err = msgp.WrapError(err, "Operations", za0001, "Key")
 			return
@@ -133,7 +133,7 @@ func (z *BatchedRequest) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.Operations[za0001].Value)
+		err = en.WriteBytes(z.Operations[za0001].Value)
 		if err != nil {
 			err = msgp.WrapError(err, "Operations", za0001, "Value")
 			return
@@ -156,10 +156,10 @@ func (z *BatchedRequest) MarshalMsg(b []byte) (o []byte, err error) {
 		o = msgp.AppendInt(o, int(z.Operations[za0001].Type))
 		// string "key"
 		o = append(o, 0xa3, 0x6b, 0x65, 0x79)
-		o = msgp.AppendString(o, z.Operations[za0001].Key)
+		o = msgp.AppendBytes(o, z.Operations[za0001].Key)
 		// string "value"
 		o = append(o, 0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
-		o = msgp.AppendString(o, z.Operations[za0001].Value)
+		o = msgp.AppendBytes(o, z.Operations[za0001].Value)
 	}
 	return
 }
@@ -220,13 +220,13 @@ func (z *BatchedRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 							z.Operations[za0001].Type = OperationType(zb0004)
 						}
 					case "key":
-						z.Operations[za0001].Key, bts, err = msgp.ReadStringBytes(bts)
+						z.Operations[za0001].Key, bts, err = msgp.ReadBytesBytes(bts, z.Operations[za0001].Key)
 						if err != nil {
 							err = msgp.WrapError(err, "Operations", za0001, "Key")
 							return
 						}
 					case "value":
-						z.Operations[za0001].Value, bts, err = msgp.ReadStringBytes(bts)
+						z.Operations[za0001].Value, bts, err = msgp.ReadBytesBytes(bts, z.Operations[za0001].Value)
 						if err != nil {
 							err = msgp.WrapError(err, "Operations", za0001, "Value")
 							return
@@ -256,7 +256,7 @@ func (z *BatchedRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 func (z *BatchedRequest) Msgsize() (s int) {
 	s = 1 + 11 + msgp.ArrayHeaderSize
 	for za0001 := range z.Operations {
-		s += 1 + 5 + msgp.IntSize + 4 + msgp.StringPrefixSize + len(z.Operations[za0001].Key) + 6 + msgp.StringPrefixSize + len(z.Operations[za0001].Value)
+		s += 1 + 5 + msgp.IntSize + 4 + msgp.BytesPrefixSize + len(z.Operations[za0001].Key) + 6 + msgp.BytesPrefixSize + len(z.Operations[za0001].Value)
 	}
 	return
 }
@@ -317,7 +317,7 @@ func (z *BatchedResponse) DecodeMsg(dc *msgp.Reader) (err error) {
 							z.Results[za0001].Status = ResultStatus(zb0004)
 						}
 					case "message":
-						z.Results[za0001].Message, err = dc.ReadString()
+						z.Results[za0001].Message, err = dc.ReadBytes(z.Results[za0001].Message)
 						if err != nil {
 							err = msgp.WrapError(err, "Results", za0001, "Message")
 							return
@@ -372,7 +372,7 @@ func (z *BatchedResponse) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.Results[za0001].Message)
+		err = en.WriteBytes(z.Results[za0001].Message)
 		if err != nil {
 			err = msgp.WrapError(err, "Results", za0001, "Message")
 			return
@@ -395,7 +395,7 @@ func (z *BatchedResponse) MarshalMsg(b []byte) (o []byte, err error) {
 		o = msgp.AppendInt(o, int(z.Results[za0001].Status))
 		// string "message"
 		o = append(o, 0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
-		o = msgp.AppendString(o, z.Results[za0001].Message)
+		o = msgp.AppendBytes(o, z.Results[za0001].Message)
 	}
 	return
 }
@@ -456,7 +456,7 @@ func (z *BatchedResponse) UnmarshalMsg(bts []byte) (o []byte, err error) {
 							z.Results[za0001].Status = ResultStatus(zb0004)
 						}
 					case "message":
-						z.Results[za0001].Message, bts, err = msgp.ReadStringBytes(bts)
+						z.Results[za0001].Message, bts, err = msgp.ReadBytesBytes(bts, z.Results[za0001].Message)
 						if err != nil {
 							err = msgp.WrapError(err, "Results", za0001, "Message")
 							return
@@ -486,7 +486,7 @@ func (z *BatchedResponse) UnmarshalMsg(bts []byte) (o []byte, err error) {
 func (z *BatchedResponse) Msgsize() (s int) {
 	s = 1 + 8 + msgp.ArrayHeaderSize
 	for za0001 := range z.Results {
-		s += 1 + 7 + msgp.IntSize + 8 + msgp.StringPrefixSize + len(z.Results[za0001].Message)
+		s += 1 + 7 + msgp.IntSize + 8 + msgp.BytesPrefixSize + len(z.Results[za0001].Message)
 	}
 	return
 }
@@ -520,13 +520,13 @@ func (z *Operation) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.Type = OperationType(zb0002)
 			}
 		case "key":
-			z.Key, err = dc.ReadString()
+			z.Key, err = dc.ReadBytes(z.Key)
 			if err != nil {
 				err = msgp.WrapError(err, "Key")
 				return
 			}
 		case "value":
-			z.Value, err = dc.ReadString()
+			z.Value, err = dc.ReadBytes(z.Value)
 			if err != nil {
 				err = msgp.WrapError(err, "Value")
 				return
@@ -543,7 +543,7 @@ func (z *Operation) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z Operation) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *Operation) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 3
 	// write "type"
 	err = en.Append(0x83, 0xa4, 0x74, 0x79, 0x70, 0x65)
@@ -560,7 +560,7 @@ func (z Operation) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.Key)
+	err = en.WriteBytes(z.Key)
 	if err != nil {
 		err = msgp.WrapError(err, "Key")
 		return
@@ -570,7 +570,7 @@ func (z Operation) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.Value)
+	err = en.WriteBytes(z.Value)
 	if err != nil {
 		err = msgp.WrapError(err, "Value")
 		return
@@ -579,7 +579,7 @@ func (z Operation) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z Operation) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *Operation) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// map header, size 3
 	// string "type"
@@ -587,10 +587,10 @@ func (z Operation) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendInt(o, int(z.Type))
 	// string "key"
 	o = append(o, 0xa3, 0x6b, 0x65, 0x79)
-	o = msgp.AppendString(o, z.Key)
+	o = msgp.AppendBytes(o, z.Key)
 	// string "value"
 	o = append(o, 0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
-	o = msgp.AppendString(o, z.Value)
+	o = msgp.AppendBytes(o, z.Value)
 	return
 }
 
@@ -623,13 +623,13 @@ func (z *Operation) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.Type = OperationType(zb0002)
 			}
 		case "key":
-			z.Key, bts, err = msgp.ReadStringBytes(bts)
+			z.Key, bts, err = msgp.ReadBytesBytes(bts, z.Key)
 			if err != nil {
 				err = msgp.WrapError(err, "Key")
 				return
 			}
 		case "value":
-			z.Value, bts, err = msgp.ReadStringBytes(bts)
+			z.Value, bts, err = msgp.ReadBytesBytes(bts, z.Value)
 			if err != nil {
 				err = msgp.WrapError(err, "Value")
 				return
@@ -647,8 +647,8 @@ func (z *Operation) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Operation) Msgsize() (s int) {
-	s = 1 + 5 + msgp.IntSize + 4 + msgp.StringPrefixSize + len(z.Key) + 6 + msgp.StringPrefixSize + len(z.Value)
+func (z *Operation) Msgsize() (s int) {
+	s = 1 + 5 + msgp.IntSize + 4 + msgp.BytesPrefixSize + len(z.Key) + 6 + msgp.BytesPrefixSize + len(z.Value)
 	return
 }
 
@@ -733,7 +733,7 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.Status = ResultStatus(zb0002)
 			}
 		case "message":
-			z.Message, err = dc.ReadString()
+			z.Message, err = dc.ReadBytes(z.Message)
 			if err != nil {
 				err = msgp.WrapError(err, "Message")
 				return
@@ -750,7 +750,7 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z Result) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *Result) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 2
 	// write "status"
 	err = en.Append(0x82, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
@@ -767,7 +767,7 @@ func (z Result) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.Message)
+	err = en.WriteBytes(z.Message)
 	if err != nil {
 		err = msgp.WrapError(err, "Message")
 		return
@@ -776,7 +776,7 @@ func (z Result) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z Result) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *Result) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// map header, size 2
 	// string "status"
@@ -784,7 +784,7 @@ func (z Result) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendInt(o, int(z.Status))
 	// string "message"
 	o = append(o, 0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
-	o = msgp.AppendString(o, z.Message)
+	o = msgp.AppendBytes(o, z.Message)
 	return
 }
 
@@ -817,7 +817,7 @@ func (z *Result) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.Status = ResultStatus(zb0002)
 			}
 		case "message":
-			z.Message, bts, err = msgp.ReadStringBytes(bts)
+			z.Message, bts, err = msgp.ReadBytesBytes(bts, z.Message)
 			if err != nil {
 				err = msgp.WrapError(err, "Message")
 				return
@@ -835,8 +835,8 @@ func (z *Result) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Result) Msgsize() (s int) {
-	s = 1 + 7 + msgp.IntSize + 8 + msgp.StringPrefixSize + len(z.Message)
+func (z *Result) Msgsize() (s int) {
+	s = 1 + 7 + msgp.IntSize + 8 + msgp.BytesPrefixSize + len(z.Message)
 	return
 }
 

@@ -16,7 +16,7 @@ type Server struct {
 	Address   string
 	shutdown  bool
 	logger    *log.Logger
-	kv        map[string]string
+	kv        map[string][]byte
 	request   protocol.BatchedRequest
 	requests  []protocol.Operation
 	response  protocol.BatchedResponse
@@ -72,7 +72,7 @@ func New(opts Options) (*Server, error) {
 	return &Server{
 		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
 		logger:  log.New(os.Stdout, "", 0),
-		kv:      map[string]string{},
+		kv:      map[string][]byte{},
 		request: protocol.BatchedRequest{
 			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
 		},
@@ -93,6 +93,15 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop() {
 	s.shutdown = true
+	s.clearBuffers()
+}
+
+func (s *Server) clearBuffers() {
+	s.kv = map[string][]byte{}
+	s.request = protocol.BatchedRequest{}
+	s.response = protocol.BatchedResponse{}
+	s.resBuffer = []byte{}
+	s.outBuffer = []byte{}
 }
 
 func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.Action) {
@@ -131,7 +140,7 @@ func (s *Server) processErr(err error) []byte {
 	s.response.Results = s.response.Results[:0]
 	s.response.Results[0] = protocol.Result{
 		Status:  protocol.FAILURE,
-		Message: err.Error(),
+		Message: []byte(err.Error()),
 	}
 
 	var encodeErr error
@@ -154,22 +163,22 @@ func (s *Server) process() error {
 		res := protocol.Result{}
 		switch op.Type {
 		case protocol.PING:
-			res.Message = constants.PONG
+			res.Message = constants.PONG_B
 		case protocol.SET:
 			res.Message = s.setResponse(op.Key, op.Value)
 		case protocol.GET:
-			msg, err := s.getResponse(op.Key)
+			val, err := s.getResponse(op.Key)
 			if err != "" {
 				res.Status = protocol.FAILURE
-				res.Message = err
+				res.Message = []byte(err)
 			} else {
-				res.Message = string(msg)
+				res.Message = val
 			}
 		case protocol.DELETE:
 			res.Message = s.delResponse(op.Key)
 		default:
 			res.Status = protocol.FAILURE
-			res.Message = fmt.Sprintf("action undefined: %s", op.Type)
+			res.Message = []byte(fmt.Sprintf("action undefined: %s", op.Type))
 		}
 		results = append(results, res)
 	}
@@ -183,20 +192,20 @@ func (s *Server) process() error {
 	return nil
 }
 
-func (s *Server) setResponse(key string, value string) string {
-	s.kv[key] = value
-	return constants.OK
+func (s *Server) setResponse(key []byte, value []byte) []byte {
+	s.kv[string(key)] = value
+	return constants.OK_B
 }
 
-func (s *Server) getResponse(key string) (string, string) {
-	if val, ok := s.kv[key]; !ok {
-		return "", fmt.Sprintf("key %s not set", key)
+func (s *Server) getResponse(key []byte) ([]byte, string) {
+	if val, ok := s.kv[string(key)]; !ok {
+		return []byte{}, fmt.Sprintf("key %s not set", key)
 	} else {
 		return val, ""
 	}
 }
 
-func (s *Server) delResponse(key string) string {
-	delete(s.kv, key)
-	return constants.OK
+func (s *Server) delResponse(key []byte) []byte {
+	delete(s.kv, string(key))
+	return constants.OK_B
 }

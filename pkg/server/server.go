@@ -52,7 +52,11 @@ func fillDefaultOptions(opts *Options) Options {
 }
 
 func StartDefault() (*Server, error) {
-	s, err := New(Options{})
+	return StartOptions(Options{})
+}
+
+func StartOptions(opts Options) (*Server, error) {
+	s, err := New(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -122,11 +126,11 @@ func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.A
 		return
 	}
 
-	out = s.writeLength(s.resBuffer)
+	out = s.writeHeader(s.resBuffer)
 	return
 }
 
-func (s *Server) writeLength(data []byte) []byte {
+func (s *Server) writeHeader(data []byte) []byte {
 	dataLength := len(data)
 	totalLength := constants.HeaderSize + dataLength
 	if cap(s.outBuffer) < totalLength {
@@ -151,7 +155,7 @@ func (s *Server) processErr(err error) []byte {
 		return []byte(msg)
 	}
 
-	return s.writeLength(s.resBuffer)
+	return s.writeHeader(s.resBuffer)
 }
 
 func (s *Server) process() error {
@@ -161,38 +165,7 @@ func (s *Server) process() error {
 	}
 
 	for _, op := range s.requests {
-		res := protocol.Result{}
-		switch op.Type {
-		case protocol.PING:
-			res.Message = constants.BinPONG
-		case protocol.SET:
-			err := s.kv.Set(op.Key, op.Value)
-			if err != nil {
-				res.Status = protocol.FAILURE
-				res.Message = []byte(err.Error())
-			} else {
-				res.Message = constants.BinOK
-			}
-		case protocol.GET:
-			val, err := s.kv.Get(op.Key)
-			if err != nil {
-				res.Status = protocol.FAILURE
-				res.Message = []byte(err.Error())
-			} else {
-				res.Message = val
-			}
-		case protocol.DELETE:
-			err := s.kv.Del(op.Key)
-			if err != nil {
-				res.Status = protocol.FAILURE
-				res.Message = []byte(err.Error())
-			} else {
-				res.Message = constants.BinOK
-			}
-		default:
-			res.Status = protocol.FAILURE
-			res.Message = []byte(fmt.Sprintf("action undefined: %s", op.Type))
-		}
+		res := s.processRequest(op)
 		results = append(results, res)
 	}
 
@@ -203,4 +176,34 @@ func (s *Server) process() error {
 	}
 
 	return nil
+}
+
+func (s *Server) processRequest(op protocol.Operation) protocol.Result {
+	res := protocol.Result{}
+	switch op.Type {
+	case protocol.PING:
+		res.Message = constants.BinPONG
+	case protocol.SET:
+		err := s.kv.Set(op.Key, op.Value)
+		handleOperationResult(&res, constants.BinOK, err)
+	case protocol.GET:
+		val, err := s.kv.Get(op.Key)
+		handleOperationResult(&res, val, err)
+	case protocol.DELETE:
+		err := s.kv.Del(op.Key)
+		handleOperationResult(&res, constants.BinOK, err)
+	default:
+		res.Status = protocol.FAILURE
+		res.Message = []byte(fmt.Sprintf(constants.UndefinedOpErr, op.Type))
+	}
+	return res
+}
+
+func handleOperationResult(res *protocol.Result, msg []byte, err error) {
+	if err != nil {
+		res.Status = protocol.FAILURE
+		res.Message = []byte(err.Error())
+	} else {
+		res.Message = msg
+	}
 }

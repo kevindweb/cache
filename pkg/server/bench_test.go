@@ -1,33 +1,14 @@
 package server
 
 import (
+	"testing"
+
 	"cache/internal/constants"
 	"cache/internal/protocol"
-	"sync/atomic"
-	"testing"
+	"cache/internal/util"
 )
 
-var (
-	port = int32(constants.DefaultPort)
-)
-
-func startWithOptions(opts Options) (*Server, error) {
-	s, err := New(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	go func() {
-		err := s.Start()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	return s, nil
-}
-
-func BenchmarkSet(b *testing.B) {
+func BenchmarkSingleSet(b *testing.B) {
 	batchSize := 1
 	ops := []protocol.Operation{}
 	for i := 0; i < batchSize; i++ {
@@ -48,18 +29,19 @@ func BenchmarkSet(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	nextPort := int(atomic.AddInt32(&port, 1))
+	nextPort := util.GetUniquePort()
 	opts := Options{
 		Host:    constants.DefaultHost,
 		Port:    nextPort,
 		Network: constants.DefaultNetwork,
 	}
 
-	server, err := startWithOptions(opts)
+	server, err := StartOptions(opts)
 	if err != nil {
 		b.Fatal(err)
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		server.eventHandler(nil, encoded)

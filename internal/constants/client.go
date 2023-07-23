@@ -22,4 +22,6 @@ const (
 
 	ClientUninitializedErr = "client was not initialized"
 	ClientInitTimeoutErr   = "timed out dialing %s for %s"
+
+	UndefinedOpErr = "undefined operation: %s"
 )

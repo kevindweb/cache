@@ -44,16 +44,6 @@ func fillDefaultOptions(opts *Options) Options {
 	return *opts
 }
 
-func StartDefault() (*Client, error) {
-	c, err := New(Options{})
-	if err != nil {
-		return nil, err
-	}
-
-	c.Start()
-	return c, c.Ping()
-}
-
 func New(opts Options) (*Client, error) {
 	opts = fillDefaultOptions(&opts)
 	maxClientRequests := constants.MaxRequestBatch * constants.MaxConnectionPool
@@ -100,7 +90,7 @@ func connectWithTimeout(
 			return conn, nil
 		}
 
-		if isTimeout(err) {
+		if util.IsTimeout(err) {
 			return nil, err
 		}
 
@@ -250,6 +240,27 @@ func (c *Client) validateClient() error {
 	return nil
 }
 
+func StartDefault() (*Client, error) {
+	return StartOptions(Options{})
+}
+
+func StartOptions(opts Options) (*Client, error) {
+	c, err := New(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	c.Start()
+	return c, c.Ping()
+}
+
+func (c *Client) Start() {
+	for _, worker := range c.workers {
+		worker := worker
+		go worker.scheduler()
+	}
+}
+
 func (c *Client) Stop() error {
 	for _, worker := range c.workers {
 		worker.shutdown <- true
@@ -259,13 +270,6 @@ func (c *Client) Stop() error {
 	}
 
 	return nil
-}
-
-func (c *Client) Start() {
-	for _, worker := range c.workers {
-		worker := worker
-		go worker.scheduler()
-	}
 }
 
 type Worker struct {
@@ -419,12 +423,4 @@ func readFromConnection(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	}
 
 	return responseBytes, nil
-}
-
-func isTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	netErr, ok := err.(net.Error)
-	return ok && netErr.Timeout()
 }

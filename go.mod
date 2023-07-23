@@ -5,13 +5,13 @@ go 1.20
 require (
 	github.com/tidwall/evio v1.0.8
 	github.com/tinylib/msgp v1.1.8
+	github.com/google/uuid v1.3.0
 )
 
 require github.com/philhofer/fwd v1.1.2 // indirect
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/uuid v1.3.0
 	github.com/kavu/go_reuseport v1.5.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.8.4

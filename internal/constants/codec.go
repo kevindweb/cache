@@ -19,6 +19,6 @@ const (
 )
 
 var (
-	PONG_B = []byte(PONG)
-	OK_B   = []byte(OK)
+	BinPONG = []byte(PONG)
+	BinOK   = []byte(OK)
 )

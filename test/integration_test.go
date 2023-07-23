@@ -5,7 +5,7 @@ import (
 
 	"cache/pkg/client"
 	"cache/pkg/server"
-	"cache/util"
+	"cache/pkg/util"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +30,8 @@ func TestSetGetDel(t *testing.T) {
 }
 
 func cleanup(t *testing.T, client *client.Client, server *server.Server) {
-	server.Stop()
-	err := client.Stop()
+	err := server.Stop()
+	assert.NoError(t, err, "failed to stop server")
+	err = client.Stop()
 	assert.NoError(t, err, "failed to stop client")
 }

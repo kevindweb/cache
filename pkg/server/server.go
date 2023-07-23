@@ -8,6 +8,7 @@ import (
 
 	"cache/internal/constants"
 	"cache/internal/protocol"
+	"cache/internal/storage"
 
 	"github.com/tidwall/evio"
 )
@@ -16,7 +17,7 @@ type Server struct {
 	Address   string
 	shutdown  bool
 	logger    *log.Logger
-	kv        map[string][]byte
+	kv        storage.KeyValue
 	request   protocol.BatchedRequest
 	requests  []protocol.Operation
 	response  protocol.BatchedResponse
@@ -72,7 +73,7 @@ func New(opts Options) (*Server, error) {
 	return &Server{
 		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
 		logger:  log.New(os.Stdout, "", 0),
-		kv:      map[string][]byte{},
+		kv:      storage.NewCacheMap(),
 		request: protocol.BatchedRequest{
 			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
 		},
@@ -91,17 +92,17 @@ func (s *Server) Start() error {
 	return evio.Serve(events, s.Address)
 }
 
-func (s *Server) Stop() {
+func (s *Server) Stop() error {
 	s.shutdown = true
-	s.clearBuffers()
+	return s.clearBuffers()
 }
 
-func (s *Server) clearBuffers() {
-	s.kv = map[string][]byte{}
+func (s *Server) clearBuffers() error {
 	s.request = protocol.BatchedRequest{}
 	s.response = protocol.BatchedResponse{}
 	s.resBuffer = []byte{}
 	s.outBuffer = []byte{}
+	return s.kv.Clear()
 }
 
 func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.Action) {
@@ -163,19 +164,31 @@ func (s *Server) process() error {
 		res := protocol.Result{}
 		switch op.Type {
 		case protocol.PING:
-			res.Message = constants.PONG_B
+			res.Message = constants.BinPONG
 		case protocol.SET:
-			res.Message = s.setResponse(op.Key, op.Value)
-		case protocol.GET:
-			val, err := s.getResponse(op.Key)
-			if err != "" {
+			err := s.kv.Set(op.Key, op.Value)
+			if err != nil {
 				res.Status = protocol.FAILURE
-				res.Message = []byte(err)
+				res.Message = []byte(err.Error())
+			} else {
+				res.Message = constants.BinOK
+			}
+		case protocol.GET:
+			val, err := s.kv.Get(op.Key)
+			if err != nil {
+				res.Status = protocol.FAILURE
+				res.Message = []byte(err.Error())
 			} else {
 				res.Message = val
 			}
 		case protocol.DELETE:
-			res.Message = s.delResponse(op.Key)
+			err := s.kv.Del(op.Key)
+			if err != nil {
+				res.Status = protocol.FAILURE
+				res.Message = []byte(err.Error())
+			} else {
+				res.Message = constants.BinOK
+			}
 		default:
 			res.Status = protocol.FAILURE
 			res.Message = []byte(fmt.Sprintf("action undefined: %s", op.Type))
@@ -190,22 +203,4 @@ func (s *Server) process() error {
 	}
 
 	return nil
-}
-
-func (s *Server) setResponse(key []byte, value []byte) []byte {
-	s.kv[string(key)] = value
-	return constants.OK_B
-}
-
-func (s *Server) getResponse(key []byte) ([]byte, string) {
-	if val, ok := s.kv[string(key)]; !ok {
-		return []byte{}, fmt.Sprintf("key %s not set", key)
-	} else {
-		return val, ""
-	}
-}
-
-func (s *Server) delResponse(key []byte) []byte {
-	delete(s.kv, string(key))
-	return constants.OK_B
 }

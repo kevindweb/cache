@@ -66,5 +66,8 @@ func BenchmarkSet(b *testing.B) {
 	}
 	b.StopTimer()
 
-	server.Stop()
+	err = server.Stop()
+	if err != nil {
+		b.Fatal(err)
+	}
 }

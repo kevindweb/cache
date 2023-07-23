@@ -3,7 +3,7 @@ package main
 import (
 	"cache/pkg/client"
 	"cache/pkg/server"
-	"cache/util"
+	"cache/pkg/util"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -76,7 +76,9 @@ func setOperation(client *client.Client) {
 }
 
 func cleanup(client *client.Client, server *server.Server) {
-	server.Stop()
+	if err := server.Stop(); err != nil {
+		panic(fmt.Errorf("error stopping server: %w", err))
+	}
 	if err := client.Stop(); err != nil {
 		panic(fmt.Errorf("error stopping client: %w", err))
 	}

@@ -61,6 +61,8 @@ func TestStorageSetGetDel(t *testing.T) {
 				assert.NoError(t, err)
 				_, err = store.Get(key)
 				assert.Error(t, err)
+				err = store.Free()
+				assert.NoError(t, err)
 			})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"cache/internal/constants"
 	"cache/internal/protocol"
@@ -16,6 +17,7 @@ import (
 type Server struct {
 	Address   string
 	shutdown  bool
+	stopped   chan (bool)
 	logger    *log.Logger
 	kv        storage.KeyValue
 	request   protocol.BatchedRequest
@@ -29,6 +31,29 @@ type Options struct {
 	Host    string
 	Port    int
 	Network string
+}
+
+func New(opts Options) (*Server, error) {
+	opts = fillDefaultOptions(&opts)
+	if err := validateOptions(opts); err != nil {
+		return nil, err
+	}
+
+	bufferSize := constants.MaxRequestBatch * constants.RequestSizeBytes
+	return &Server{
+		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
+		stopped: make(chan bool),
+		logger:  log.New(os.Stdout, "", 0),
+		kv:      storage.NewCacheMap(),
+		request: protocol.BatchedRequest{
+			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
+		},
+		response: protocol.BatchedResponse{
+			Results: make([]protocol.Result, 0, constants.MaxRequestBatch),
+		},
+		resBuffer: make([]byte, bufferSize),
+		outBuffer: make([]byte, bufferSize),
+	}, nil
 }
 
 func fillDefaultOptions(opts *Options) Options {
@@ -51,6 +76,14 @@ func fillDefaultOptions(opts *Options) Options {
 	return *opts
 }
 
+func validateOptions(opts Options) error {
+	if opts.Port <= 0 {
+		return fmt.Errorf(constants.InvalidPortErr, opts.Port)
+	}
+
+	return nil
+}
+
 func StartDefault() (*Server, error) {
 	return StartOptions(Options{})
 }
@@ -71,24 +104,6 @@ func StartOptions(opts Options) (*Server, error) {
 	return s, nil
 }
 
-func New(opts Options) (*Server, error) {
-	opts = fillDefaultOptions(&opts)
-	bufferSize := constants.MaxRequestBatch * constants.RequestSizeBytes
-	return &Server{
-		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
-		logger:  log.New(os.Stdout, "", 0),
-		kv:      storage.NewCacheMap(),
-		request: protocol.BatchedRequest{
-			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
-		},
-		response: protocol.BatchedResponse{
-			Results: make([]protocol.Result, 0, constants.MaxRequestBatch),
-		},
-		resBuffer: make([]byte, bufferSize),
-		outBuffer: make([]byte, bufferSize),
-	}, nil
-}
-
 func (s *Server) Start() error {
 	events := evio.Events{
 		Data: s.eventHandler,
@@ -98,19 +113,24 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop() error {
 	s.shutdown = true
-	return s.clearBuffers()
+	select {
+	case <-s.stopped:
+	case <-time.After(constants.ShutdownTimeout):
+	}
+	return s.free()
 }
 
-func (s *Server) clearBuffers() error {
+func (s *Server) free() error {
 	s.request = protocol.BatchedRequest{}
 	s.response = protocol.BatchedResponse{}
 	s.resBuffer = []byte{}
 	s.outBuffer = []byte{}
-	return s.kv.Clear()
+	return s.kv.Free()
 }
 
 func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.Action) {
 	if s.shutdown {
+		s.stopped <- true
 		action = evio.Shutdown
 		return
 	}

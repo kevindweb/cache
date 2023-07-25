@@ -35,31 +35,22 @@ func customParameters() {
 		Port:    port,
 		Network: network,
 	}
-	customServer, err := server.New(serverOptions)
+	customServer, err := server.StartOptions(serverOptions)
 	if err != nil {
-		panic(fmt.Errorf("error creating custom server: %w", err))
+		panic(fmt.Errorf("error starting custom server: %w", err))
 	}
 
 	fmt.Printf("Starting custom server at %s\n", customServer.Address)
-
-	go func() {
-		err := customServer.Start()
-		if err != nil {
-			panic(fmt.Errorf("error starting custom server: %w", err))
-		}
-	}()
 
 	clientOptions := client.Options{
 		Host:    host,
 		Port:    port,
 		Network: network,
 	}
-	customClient, err := client.New(clientOptions)
+	customClient, err := client.StartOptions(clientOptions)
 	if err != nil {
 		panic(fmt.Errorf("error creating custom client: %w", err))
 	}
-
-	customClient.Start()
 
 	defer cleanup(customClient, customServer)
 	setOperation(customClient)

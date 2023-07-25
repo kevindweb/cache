@@ -19,14 +19,20 @@ func (cm CacheMap) New() KeyValue {
 	}
 }
 
-func (cm *CacheMap) Clear() error {
+func (cm *CacheMap) Free() error {
 	cm.kv = map[string][]byte{}
 	return nil
 }
 
 func (cm *CacheMap) Set(key []byte, value []byte) error {
-	cm.kv[string(key)] = value
+	cm.kv[string(key)] = cp(value)
 	return nil
+}
+
+func cp(src []byte) []byte {
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
 }
 
 func (cm *CacheMap) Get(key []byte) ([]byte, error) {

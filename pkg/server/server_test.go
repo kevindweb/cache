@@ -1,5 +1,13 @@
 package server
 
+import (
+	"cache/internal/constants"
+	"encoding/binary"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
 // import (
 // 	"cache/pkg/protocol"
 // 	"fmt"
@@ -19,24 +27,6 @@ package server
 // 	portCounter int
 // 	mu          sync.Mutex
 // )
-
-// func NewRedisClient(port int) *redis.Client {
-// 	return redis.NewClient(&redis.Options{
-// 		Addr:        fmt.Sprintf("localhost:%d", port),
-// 		DialTimeout: 1 * time.Second,
-// 		Dialer: func() (net.Conn, error) {
-// 			return connect(port)
-// 		},
-// 	})
-// }
-
-// func uniquePort() int {
-// 	mu.Lock()
-// 	portCounter++
-// 	unique := DefaultPort + portCounter
-// 	mu.Unlock()
-// 	return unique
-// }
 
 // func connect(port int) (net.Conn, error) {
 // 	attempts := 0
@@ -362,35 +352,60 @@ package server
 // 	require.NoError(t, err)
 // }
 
-// func BenchmarkProcessSet(b *testing.B) {
-// 	batchSize := 1
-// 	ops := []protocol.Operation{}
-// 	for i := 0; i < batchSize; i++ {
-// 		ops = append(ops, protocol.Operation{
-// 			Type:  protocol.SET,
-// 			Key:   "world",
-// 			Value: "hello",
-// 		})
-// 	}
+func TestDummy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		data   []byte
+		buffer []byte
+	}{
+		{
+			name: "",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+		})
+	}
+}
 
-// 	batch := protocol.BatchedRequest{
-// 		Operations: ops,
-// 	}
-
-// 	var encoded []byte
-// 	var err error
-// 	if encoded, err = batch.MarshalMsg(nil); err != nil {
-// 		b.Fatal(err)
-// 	}
-
-// 	server, err := NewServer(DefaultHost, DefaultPort)
-// 	if err != nil {
-// 		b.Fatal(err)
-// 	}
-
-// 	b.ResetTimer()
-// 	for i := 0; i < b.N; i++ {
-// 		server.eventHandler(nil, encoded)
-// 	}
-// 	b.StopTimer()
-// }
+func TestHeader(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		input  []byte
+		buffer []byte
+	}{
+		{
+			name:   "large buffer should not overflow",
+			input:  []byte("h"),
+			buffer: []byte("this is a large buffer"),
+		},
+		{
+			name:   "empty data",
+			input:  []byte{},
+			buffer: make([]byte, 100),
+		},
+		{
+			name:   "empty buffer",
+			input:  []byte("h"),
+			buffer: make([]byte, 0),
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := &Server{
+				outBuffer: tc.buffer,
+			}
+			got := server.writeHeader(tc.input)
+			length := int(binary.LittleEndian.Uint32(got[:constants.HeaderSize]))
+			assert.Equal(t, len(tc.input), length)
+			assert.Equal(t, tc.input, got[constants.HeaderSize:])
+			assert.True(t, len(server.outBuffer) >= len(tc.input)+constants.HeaderSize)
+		})
+	}
+}

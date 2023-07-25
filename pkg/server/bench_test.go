@@ -9,37 +9,19 @@ import (
 )
 
 func BenchmarkSingleSet(b *testing.B) {
-	batchSize := 1
-	ops := []protocol.Operation{}
-	for i := 0; i < batchSize; i++ {
-		ops = append(ops, protocol.Operation{
-			Type:  protocol.SET,
-			Key:   []byte("world"),
-			Value: []byte("hello"),
-		})
-	}
-
 	batch := protocol.BatchedRequest{
-		Operations: ops,
+		Operations: []protocol.Operation{
+			{
+				Type:  protocol.SET,
+				Key:   []byte("world"),
+				Value: []byte("hello"),
+			},
+		},
 	}
 
-	var encoded []byte
-	var err error
-	if encoded, err = batch.MarshalMsg(nil); err != nil {
-		b.Fatal(err)
-	}
-
-	nextPort := util.GetUniquePort()
-	opts := Options{
-		Host:    constants.DefaultHost,
-		Port:    nextPort,
-		Network: constants.DefaultNetwork,
-	}
-
-	server, err := StartOptions(opts)
-	if err != nil {
-		b.Fatal(err)
-	}
+	encoded := encode(b, batch)
+	server, stop := startUniqueServer(b)
+	defer stop()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -48,8 +30,65 @@ func BenchmarkSingleSet(b *testing.B) {
 	}
 	b.StopTimer()
 
-	err = server.Stop()
+}
+
+func encode(b *testing.B, data protocol.BatchedRequest) []byte {
+	var encoded []byte
+	var err error
+	if encoded, err = data.MarshalMsg(nil); err != nil {
+		b.Fatal(err)
+	}
+	return encoded
+}
+
+func startUniqueServer(b *testing.B) (*Server, func()) {
+	server, err := StartOptions(Options{
+		Host:    constants.DefaultHost,
+		Port:    util.GetUniquePort(),
+		Network: constants.DefaultNetwork,
+	})
 	if err != nil {
 		b.Fatal(err)
 	}
+
+	return server, func() {
+		err := server.Stop()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSingleGet(b *testing.B) {
+	batch := protocol.BatchedRequest{
+		Operations: []protocol.Operation{
+			{
+				Type:  protocol.SET,
+				Key:   []byte("world"),
+				Value: []byte("hello"),
+			},
+		},
+	}
+
+	encodedSet := encode(b, batch)
+	server, stop := startUniqueServer(b)
+	defer stop()
+	server.eventHandler(nil, encodedSet)
+
+	batchGet := protocol.BatchedRequest{
+		Operations: []protocol.Operation{
+			{
+				Type: protocol.GET,
+				Key:  []byte("world"),
+			},
+		},
+	}
+
+	encodedGet := encode(b, batchGet)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		server.eventHandler(nil, encodedGet)
+	}
+	b.StopTimer()
 }

@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"cache/internal/constants"
-	"cache/internal/protocol"
-	"cache/internal/util"
+	"github.com/kevindweb/cache/internal/constants"
+	"github.com/kevindweb/cache/internal/protocol"
+	"github.com/kevindweb/cache/internal/util"
 )
 
 type Client struct {

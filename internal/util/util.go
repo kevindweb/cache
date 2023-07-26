@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync/atomic"
 
-	"cache/internal/constants"
+	"github.com/kevindweb/cache/internal/constants"
 )
 
 var (

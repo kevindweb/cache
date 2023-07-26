@@ -1,10 +1,10 @@
 package util
 
 import (
-	"cache/internal/constants"
-	"cache/internal/util"
-	"cache/pkg/client"
-	"cache/pkg/server"
+	"github.com/kevindweb/cache/internal/constants"
+	"github.com/kevindweb/cache/internal/util"
+	"github.com/kevindweb/cache/pkg/client"
+	"github.com/kevindweb/cache/pkg/server"
 )
 
 func StartDefaultClientServer() (*client.Client, *server.Server, error) {

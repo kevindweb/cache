@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"cache/internal/constants"
-	"cache/internal/protocol"
-	"cache/internal/storage"
+	"github.com/kevindweb/cache/internal/constants"
+	"github.com/kevindweb/cache/internal/protocol"
+	"github.com/kevindweb/cache/internal/storage"
 
 	"github.com/tidwall/evio"
 )

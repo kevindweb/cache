@@ -4,13 +4,13 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"cache/internal/constants"
+	"github.com/kevindweb/cache/internal/constants"
 
 	"github.com/stretchr/testify/assert"
 )
 
 // import (
-// 	"cache/pkg/protocol"
+// 	"github.com/kevindweb/cache/pkg/protocol"
 // 	"fmt"
 // 	"io"
 // 	"math/rand"

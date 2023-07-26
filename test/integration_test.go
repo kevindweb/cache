@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	"cache/pkg/client"
-	"cache/pkg/server"
-	"cache/pkg/util"
+	"github.com/kevindweb/cache/pkg/client"
+	"github.com/kevindweb/cache/pkg/server"
+	"github.com/kevindweb/cache/pkg/util"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

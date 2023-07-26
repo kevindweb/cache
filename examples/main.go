@@ -1,10 +1,11 @@
 package main
 
 import (
-	"cache/pkg/client"
-	"cache/pkg/server"
-	"cache/pkg/util"
 	"fmt"
+
+	"github.com/kevindweb/cache/pkg/client"
+	"github.com/kevindweb/cache/pkg/server"
+	"github.com/kevindweb/cache/pkg/util"
 
 	"github.com/google/uuid"
 )

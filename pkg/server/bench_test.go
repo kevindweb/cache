@@ -29,7 +29,6 @@ func BenchmarkSingleSet(b *testing.B) {
 		server.eventHandler(nil, encoded)
 	}
 	b.StopTimer()
-
 }
 
 func encode(b *testing.B, data protocol.BatchedRequest) []byte {
@@ -52,9 +51,9 @@ func startUniqueServer(b *testing.B) (*Server, func()) {
 	}
 
 	return server, func() {
-		err := server.Stop()
-		if err != nil {
-			b.Fatal(err)
+		stopErr := server.Stop()
+		if stopErr != nil {
+			b.Fatal(stopErr)
 		}
 	}
 }

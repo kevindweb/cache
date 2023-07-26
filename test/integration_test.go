@@ -66,8 +66,8 @@ func TestSetGetDelParallel(t *testing.T) {
 	for i := 0; i < numKeys; i++ {
 		i := i
 		go func(i int) {
-			err := client.Set(keys[i], values[i])
-			assert.NoError(t, err)
+			setErr := client.Set(keys[i], values[i])
+			assert.NoError(t, setErr)
 			wg.Done()
 		}(i)
 	}
@@ -78,8 +78,8 @@ func TestSetGetDelParallel(t *testing.T) {
 	for i := 0; i < numOperations; i++ {
 		go func() {
 			randomIndex := rand.Intn(numKeys)
-			val, err := client.Get(keys[randomIndex])
-			assert.NoError(t, err)
+			val, getErr := client.Get(keys[randomIndex])
+			assert.NoError(t, getErr)
 			assert.Equal(t, values[randomIndex], val)
 			wg.Done()
 		}()

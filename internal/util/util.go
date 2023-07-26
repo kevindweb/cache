@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -9,7 +10,7 @@ import (
 )
 
 var (
-	uniquePort uint32 = constants.DefaultPort
+	uniquePort uint32 = constants.DefaultPort //nolint:gochecknoglobals // need globally unique port
 )
 
 func ErrResponse(err string) []string {
@@ -20,7 +21,8 @@ func IsTimeout(err error) bool {
 	if err == nil {
 		return false
 	}
-	netErr, ok := err.(net.Error)
+	var netErr net.Error
+	ok := !errors.As(err, &netErr)
 	return ok && netErr.Timeout()
 }
 

@@ -45,23 +45,22 @@ func TestStorageSetGetDel(t *testing.T) {
 		tc := tc
 		key := []byte(tc.key)
 		val := []byte(tc.val)
-		for _, store := range Caches {
-			store := store
+		for _, cache := range caches() {
+			cache := cache
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				store := store.New()
-				err := store.Set(key, val)
+				err := cache.Set(key, val)
 				assert.NoError(t, err)
-				got, err := store.Get(key)
+				got, err := cache.Get(key)
 				assert.NoError(t, err)
 				if diff := cmp.Diff(tc.val, string(got)); diff != "" {
 					t.Fatal(diff)
 				}
-				err = store.Del(key)
+				err = cache.Del(key)
 				assert.NoError(t, err)
-				_, err = store.Get(key)
+				_, err = cache.Get(key)
 				assert.Error(t, err)
-				err = store.Free()
+				err = cache.Free()
 				assert.NoError(t, err)
 			})
 		}

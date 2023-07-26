@@ -8,8 +8,8 @@ type KeyValue interface {
 	Del([]byte) error
 }
 
-var (
-	Caches = []KeyValue{
-		&CacheMap{},
+func caches() []KeyValue {
+	return []KeyValue{
+		NewCacheMap(),
 	}
-)
+}

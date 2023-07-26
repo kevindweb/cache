@@ -9,9 +9,8 @@ require (
 	github.com/tinylib/msgp v1.1.8
 )
 
-require github.com/philhofer/fwd v1.1.2 // indirect
-
 require (
+	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kavu/go_reuseport v1.5.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

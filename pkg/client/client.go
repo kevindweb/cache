@@ -356,8 +356,9 @@ func (w *Worker) processBatch(
 	}
 
 	batchResponse := &protocol.BatchedResponse{}
-	if _, err := batchResponse.UnmarshalMsg(responseBytes); err != nil {
-		batchError(err, requests)
+	_, unmarshalErr := batchResponse.UnmarshalMsg(responseBytes)
+	if unmarshalErr != nil {
+		batchError(unmarshalErr, requests)
 		return
 	}
 

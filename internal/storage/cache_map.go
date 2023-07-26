@@ -36,11 +36,11 @@ func cp(src []byte) []byte {
 }
 
 func (cm *CacheMap) Get(key []byte) ([]byte, error) {
-	if val, ok := cm.kv[string(key)]; !ok {
+	val, ok := cm.kv[string(key)]
+	if !ok {
 		return []byte{}, fmt.Errorf("key %s not set", key)
-	} else {
-		return val, nil
 	}
+	return val, nil
 }
 
 func (cm *CacheMap) Del(key []byte) error {

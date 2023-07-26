@@ -95,9 +95,8 @@ func StartOptions(opts Options) (*Server, error) {
 	}
 
 	go func() {
-		err := s.Start()
-		if err != nil {
-			panic(err)
+		if startErr := s.Start(); startErr != nil {
+			panic(startErr)
 		}
 	}()
 
@@ -128,26 +127,22 @@ func (s *Server) free() error {
 	return s.kv.Free()
 }
 
-func (s *Server) eventHandler(c evio.Conn, in []byte) (out []byte, action evio.Action) {
+func (s *Server) eventHandler(_ evio.Conn, in []byte) ([]byte, evio.Action) {
 	if s.shutdown {
 		s.stopped <- true
-		action = evio.Shutdown
-		return
+		return []byte{}, evio.Shutdown
 	}
 
 	if _, err := (&s.request).UnmarshalMsg(in); err != nil {
-		out = s.processErr(err)
-		return
+		return s.processErr(err), evio.None
 	}
 
 	s.requests = s.request.Operations
 	if err := s.process(); err != nil {
-		out = s.processErr(err)
-		return
+		return s.processErr(err), evio.None
 	}
 
-	out = s.writeHeader(s.resBuffer)
-	return
+	return s.writeHeader(s.resBuffer), evio.None
 }
 
 func (s *Server) writeHeader(data []byte) []byte {
@@ -181,7 +176,7 @@ func (s *Server) processErr(err error) []byte {
 func (s *Server) process() error {
 	results := s.response.Results[:0]
 	if len(s.requests) > cap(results) {
-		results = make([]protocol.Result, len(s.requests))
+		results = make([]protocol.Result, 0, len(s.requests))
 	}
 
 	for _, op := range s.requests {
@@ -202,16 +197,16 @@ func (s *Server) processRequest(op protocol.Operation) protocol.Result {
 	res := protocol.Result{}
 	switch op.Type {
 	case protocol.PING:
-		res.Message = constants.BinPONG
+		res.Message = []byte(constants.PONG)
 	case protocol.SET:
 		err := s.kv.Set(op.Key, op.Value)
-		handleOperationResult(&res, constants.BinOK, err)
+		handleOperationResult(&res, []byte(constants.OK), err)
 	case protocol.GET:
 		val, err := s.kv.Get(op.Key)
 		handleOperationResult(&res, val, err)
 	case protocol.DELETE:
 		err := s.kv.Del(op.Key)
-		handleOperationResult(&res, constants.BinOK, err)
+		handleOperationResult(&res, []byte(constants.OK), err)
 	default:
 		res.Status = protocol.FAILURE
 		res.Message = []byte(fmt.Sprintf(constants.UndefinedOpErr, op.Type))

@@ -17,8 +17,3 @@ const (
 	DEL  = "del"
 	SET  = "set"
 )
-
-var (
-	BinPONG = []byte(PONG)
-	BinOK   = []byte(OK)
-)

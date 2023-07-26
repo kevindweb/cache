@@ -1,9 +1,10 @@
 package server
 
 import (
-	"cache/internal/constants"
 	"encoding/binary"
 	"testing"
+
+	"cache/internal/constants"
 
 	"github.com/stretchr/testify/assert"
 )

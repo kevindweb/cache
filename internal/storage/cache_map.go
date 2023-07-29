@@ -2,6 +2,12 @@ package storage
 
 import (
 	"fmt"
+
+	"github.com/kevindweb/cache/internal/constants"
+)
+
+const (
+	UnsetKeyErr = "key %s not set"
 )
 
 type CacheMap struct {
@@ -15,7 +21,7 @@ func NewCacheMap() KeyValue {
 
 func (cm CacheMap) New() KeyValue {
 	return &CacheMap{
-		kv: map[string][]byte{},
+		kv: make(map[string][]byte, constants.MaxRequestBatch),
 	}
 }
 
@@ -38,7 +44,7 @@ func cp(src []byte) []byte {
 func (cm *CacheMap) Get(key []byte) ([]byte, error) {
 	val, ok := cm.kv[string(key)]
 	if !ok {
-		return []byte{}, fmt.Errorf("key %s not set", key)
+		return []byte{}, fmt.Errorf(UnsetKeyErr, key)
 	}
 	return val, nil
 }

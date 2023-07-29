@@ -29,3 +29,7 @@ func IsTimeout(err error) bool {
 func GetUniquePort() int {
 	return int(atomic.AddUint32(&uniquePort, 1))
 }
+
+func ReadRequestBytes(data []byte) string {
+	return string(data[constants.HeaderSize:])
+}

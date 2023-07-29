@@ -14,6 +14,10 @@ import (
 	"github.com/tidwall/evio"
 )
 
+const (
+	BatchTooLargeErr = "batch size %d too large, max is %d"
+)
+
 type Server struct {
 	Address   string
 	shutdown  bool
@@ -23,8 +27,10 @@ type Server struct {
 	request   protocol.BatchedRequest
 	requests  []protocol.Operation
 	response  protocol.BatchedResponse
+	results   []protocol.Result
 	resBuffer []byte
 	outBuffer []byte
+	ok        []byte
 }
 
 type Options struct {
@@ -40,6 +46,7 @@ func New(opts Options) (*Server, error) {
 	}
 
 	bufferSize := constants.MaxRequestBatch * constants.RequestSizeBytes
+	results := make([]protocol.Result, 0, constants.MaxRequestBatch)
 	return &Server{
 		Address: fmt.Sprintf("%s://%s:%d", opts.Network, opts.Host, opts.Port),
 		stopped: make(chan bool),
@@ -48,11 +55,11 @@ func New(opts Options) (*Server, error) {
 		request: protocol.BatchedRequest{
 			Operations: make([]protocol.Operation, constants.MaxRequestBatch),
 		},
-		response: protocol.BatchedResponse{
-			Results: make([]protocol.Result, 0, constants.MaxRequestBatch),
-		},
+		results:   results,
+		response:  protocol.BatchedResponse{},
 		resBuffer: make([]byte, bufferSize),
 		outBuffer: make([]byte, bufferSize),
+		ok:        constants.Ok(),
 	}, nil
 }
 
@@ -121,7 +128,9 @@ func (s *Server) Stop() error {
 
 func (s *Server) free() error {
 	s.request = protocol.BatchedRequest{}
+	s.requests = []protocol.Operation{}
 	s.response = protocol.BatchedResponse{}
+	s.results = []protocol.Result{}
 	s.resBuffer = []byte{}
 	s.outBuffer = []byte{}
 	return s.kv.Free()
@@ -138,6 +147,13 @@ func (s *Server) eventHandler(_ evio.Conn, in []byte) ([]byte, evio.Action) {
 	}
 
 	s.requests = s.request.Operations
+	if len(s.requests) > constants.MaxRequestBatch {
+		err := fmt.Errorf(
+			BatchTooLargeErr, len(s.requests), constants.MaxRequestBatch,
+		)
+		return s.processErr(err), evio.None
+	}
+
 	if err := s.process(); err != nil {
 		return s.processErr(err), evio.None
 	}
@@ -174,14 +190,9 @@ func (s *Server) processErr(err error) []byte {
 }
 
 func (s *Server) process() error {
-	results := s.response.Results[:0]
-	if len(s.requests) > cap(results) {
-		results = make([]protocol.Result, 0, len(s.requests))
-	}
-
-	for _, op := range s.requests {
-		res := s.processRequest(op)
-		results = append(results, res)
+	results := s.results[:len(s.requests)]
+	for i, op := range s.requests {
+		results[i] = s.processRequest(op)
 	}
 
 	var err error
@@ -197,16 +208,16 @@ func (s *Server) processRequest(op protocol.Operation) protocol.Result {
 	res := protocol.Result{}
 	switch op.Type {
 	case protocol.PING:
-		res.Message = []byte(constants.PONG)
+		res.Message = constants.Pong()
 	case protocol.SET:
 		err := s.kv.Set(op.Key, op.Value)
-		handleOperationResult(&res, []byte(constants.OK), err)
+		handleOperationResult(&res, s.ok, err)
 	case protocol.GET:
 		val, err := s.kv.Get(op.Key)
 		handleOperationResult(&res, val, err)
 	case protocol.DELETE:
 		err := s.kv.Del(op.Key)
-		handleOperationResult(&res, []byte(constants.OK), err)
+		handleOperationResult(&res, s.ok, err)
 	default:
 		res.Status = protocol.FAILURE
 		res.Message = []byte(fmt.Sprintf(constants.UndefinedOpErr, op.Type))

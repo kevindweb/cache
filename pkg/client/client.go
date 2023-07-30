@@ -116,20 +116,30 @@ type clientReq struct {
 }
 
 func (c *Client) pingRequest() error {
-	pingOp := protocol.Operation{
+	response, err := c.sendRequest(protocol.Operation{
 		Type: protocol.PING,
+	})
+	if err != nil {
+		return err
 	}
-	response := c.sendRequest(pingOp)
+
 	return expectResponse(constants.PING, constants.PONG, response)
 }
 
-func (c *Client) sendRequest(op protocol.Operation) []string {
-	resChan := make(chan []string, 1)
+func (c *Client) sendRequest(op protocol.Operation) ([]string, error) {
+	resChan := make(chan []string)
 	c.requests <- clientReq{
 		req: op,
 		res: resChan,
 	}
-	return <-resChan
+	select {
+	case res := <-resChan:
+		return res, nil
+	case <-time.After(constants.ClientRequestTimeout):
+		return []string{}, fmt.Errorf(
+			constants.ClientRequestTimeoutErr, op.Type, constants.ClientRequestTimeout,
+		)
+	}
 }
 
 func errorResponse(command string, res []string) error {
@@ -154,11 +164,13 @@ func (c *Client) Get(key string) (string, error) {
 		return "", err
 	}
 
-	getOp := protocol.Operation{
+	response, err := c.sendRequest(protocol.Operation{
 		Type: protocol.GET,
 		Key:  []byte(key),
+	})
+	if err != nil {
+		return "", err
 	}
-	response := c.sendRequest(getOp)
 	return getResponse(key, response)
 }
 
@@ -182,12 +194,14 @@ func (c *Client) Set(key, val string) error {
 		return err
 	}
 
-	setOp := protocol.Operation{
+	response, sendErr := c.sendRequest(protocol.Operation{
 		Type:  protocol.SET,
 		Key:   []byte(key),
 		Value: []byte(val),
+	})
+	if sendErr != nil {
+		return sendErr
 	}
-	response := c.sendRequest(setOp)
 	return expectResponse(constants.SET, constants.OK, response)
 }
 
@@ -210,11 +224,14 @@ func (c *Client) Del(key string) error {
 		return err
 	}
 
-	delOp := protocol.Operation{
+	response, sendErr := c.sendRequest(protocol.Operation{
 		Type: protocol.DELETE,
 		Key:  []byte(key),
+	})
+	if sendErr != nil {
+		return sendErr
 	}
-	response := c.sendRequest(delOp)
+
 	return expectResponse(constants.DEL, constants.OK, response)
 }
 

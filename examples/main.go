@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 
 	"github.com/kevindweb/cache/pkg/client"
 	"github.com/kevindweb/cache/pkg/server"
@@ -11,23 +13,23 @@ import (
 )
 
 func main() {
-	defaultParameters()
-
-	customParameters()
+	logger := log.New(os.Stdout, "", 0)
+	defaultParameters(logger)
+	customParameters(logger)
 }
 
-func defaultParameters() {
-	fmt.Println("Starting default server and client")
+func defaultParameters(logger *log.Logger) {
+	logger.Println("Starting default server and client")
 	client, server, err := util.StartDefaultClientServer()
 	if err != nil {
 		panic(fmt.Errorf("error starting default client & server: %w", err))
 	}
 
 	defer cleanup(client, server)
-	setOperation(client)
+	setOperation(logger, client)
 }
 
-func customParameters() {
+func customParameters(logger *log.Logger) {
 	host := "0.0.0.0"
 	port := 8080
 	network := "tcp"
@@ -41,7 +43,7 @@ func customParameters() {
 		panic(fmt.Errorf("error starting custom server: %w", err))
 	}
 
-	fmt.Printf("Starting custom server at %s\n", customServer.Address)
+	logger.Printf("Starting custom server at %s\n", customServer.Address)
 
 	clientOptions := client.Options{
 		Host:    host,
@@ -54,11 +56,11 @@ func customParameters() {
 	}
 
 	defer cleanup(customClient, customServer)
-	setOperation(customClient)
+	setOperation(logger, customClient)
 }
 
-func setOperation(client *client.Client) {
-	fmt.Println("Running example set operation")
+func setOperation(logger *log.Logger, client *client.Client) {
+	logger.Println("Running example set operation")
 	key := uuid.New().String()
 	val := uuid.New().String()
 	err := client.Set(key, val)

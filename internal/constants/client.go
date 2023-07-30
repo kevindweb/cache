@@ -3,11 +3,12 @@ package constants
 import "time"
 
 const (
-	BaseWaitTime    = time.Microsecond * 500
-	DialTimeout     = time.Second * 2
-	ConnRetryWait   = time.Millisecond * 10
-	ReadTimeout     = time.Second * 1
-	ShutdownTimeout = time.Millisecond * 500
+	BaseWaitTime         = time.Microsecond * 500
+	DialTimeout          = time.Second * 2
+	ConnRetryWait        = time.Millisecond * 10
+	ReadTimeout          = time.Second * 1
+	ShutdownTimeout      = time.Millisecond * 500
+	ClientRequestTimeout = time.Second * 2
 
 	DefaultNetwork = "tcp"
 	DefaultHost    = "localhost"
@@ -22,8 +23,9 @@ const (
 	EmptyResErr    = "empty response back from %s request"
 	EmptyResArgErr = "empty argument from %s request"
 
-	ClientUninitializedErr = "client was not initialized"
-	ClientInitTimeoutErr   = "timed out dialing %s for %s"
+	ClientUninitializedErr  = "client was not initialized"
+	ClientInitTimeoutErr    = "timed out dialing %s for %s"
+	ClientRequestTimeoutErr = "request (%s) timed out after %s"
 
 	UndefinedOpErr = "undefined operation: %s"
 )

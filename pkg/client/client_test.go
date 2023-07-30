@@ -267,7 +267,10 @@ func TestPing(t *testing.T) {
 				c = setupClient()
 				go func() {
 					req := <-c.requests
-					// require.Equal(t, []string{constants.PING}, req.req)
+					pingOperation := protocol.Operation{
+						Type: protocol.PING,
+					}
+					require.Equal(t, pingOperation, req.req)
 					req.res <- []string{tc.response}
 				}()
 			} else {

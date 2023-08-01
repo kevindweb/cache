@@ -405,26 +405,22 @@ func (w *Worker) processBatch(
 }
 
 func requestDeduplication(operations []protocol.Operation) ([]protocol.Operation, map[int][]int) {
-	index := map[int][]int{}
 	deduplicated := []protocol.Operation{}
-	seen := map[string]int{}
+	index := make(map[int][]int)
+	seen := make(map[string]int)
+
 	for i, op := range operations {
-		var newInx int
-		var opSeen bool
 		hash := op.Index()
-		if newInx, opSeen = seen[hash]; !opSeen {
-			newInx = len(deduplicated)
+		if updatedInx, opSeen := seen[hash]; opSeen {
+			index[updatedInx] = append(index[updatedInx], i)
+		} else {
+			newInx := len(deduplicated)
 			seen[hash] = newInx
 			deduplicated = append(deduplicated, op)
-		}
-
-		if duplicates, ok := index[newInx]; ok {
-			duplicates = append(duplicates, i)
-			index[newInx] = duplicates
-		} else {
 			index[newInx] = []int{i}
 		}
 	}
+
 	return deduplicated, index
 }
 

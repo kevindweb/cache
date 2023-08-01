@@ -4,7 +4,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,9 +52,7 @@ func TestStorageSetGetDel(t *testing.T) {
 				assert.NoError(t, err)
 				got, err := cache.Get(key)
 				assert.NoError(t, err)
-				if diff := cmp.Diff(tc.val, string(got)); diff != "" {
-					t.Fatal(diff)
-				}
+				assert.Equal(t, tc.val, string(got))
 				err = cache.Del(key)
 				assert.NoError(t, err)
 				_, err = cache.Get(key)

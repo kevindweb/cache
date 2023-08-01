@@ -22,7 +22,7 @@ no-dirty:
 ## upgrade: upgrade modfile
 .PHONY: upgrade
 upgrade:
-	go get -u
+	go get -u ./...
 
 ## tidy: format code and tidy modfile
 .PHONY: tidy
@@ -101,10 +101,3 @@ install:
 .PHONY: push
 push: tidy audit no-dirty
 	git push
-
-## production/deploy: deploy the application to production
-.PHONY: production/deploy
-production/deploy: confirm tidy audit no-dirty
-	GOOS=linux GOARCH=amd64 go build -ldflags='-s' -o=/tmp/bin/linux_amd64/${BINARY_NAME} ${MAIN_PACKAGE_PATH}
-	upx -5 /tmp/bin/linux_amd64/${BINARY_NAME}
-	# Include additional deployment steps here...

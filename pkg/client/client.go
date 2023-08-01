@@ -354,6 +354,9 @@ func (w *Worker) processBatch(
 		return
 	}
 
+	ops, requestIndex := requestDeduplication(batch.Operations)
+	batch.Operations = ops
+
 	encoded, err := batch.MarshalMsg(nil)
 	if err != nil {
 		batchError(err, requests)
@@ -399,7 +402,25 @@ func (w *Worker) processBatch(
 		return
 	}
 
-	propagateBatch(responses, requests)
+	propagateBatch(responses, requests, requestIndex)
+}
+
+func requestDeduplication(operations []protocol.Operation) ([]protocol.Operation, map[int]int) {
+	index := map[int]int{}
+	deduplicated := []protocol.Operation{}
+	seen := map[string]int{}
+	for i, op := range operations {
+		var newInx int
+		var opSeen bool
+		hash := op.Index()
+		if newInx, opSeen = seen[hash]; !opSeen {
+			newInx = len(deduplicated)
+			seen[hash] = newInx
+			deduplicated = append(deduplicated, op)
+		}
+		index[i] = newInx
+	}
+	return deduplicated, index
 }
 
 func batchError(err error, requests []clientReq) {
@@ -409,9 +430,9 @@ func batchError(err error, requests []clientReq) {
 	}
 }
 
-func propagateBatch(responses []protocol.Result, requests []clientReq) {
+func propagateBatch(responses []protocol.Result, requests []clientReq, index map[int]int) {
 	for i, res := range responses {
-		req := requests[i]
+		req := requests[index[i]]
 		msg := string(res.Message)
 		if res.Status == protocol.FAILURE {
 			req.res <- util.ErrResponse(msg)

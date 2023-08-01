@@ -26,7 +26,7 @@ func (op OperationType) String() string {
 	case GET:
 		return "GET"
 	case DELETE:
-		return "SET"
+		return "DELETE"
 	case PING:
 		return "PING"
 	default:
@@ -40,6 +40,10 @@ type Operation struct {
 	Value []byte        `msg:"value"`
 }
 
+func (op Operation) Index() string {
+	return op.Type.String() + "-" + string(op.Key) + "-" + string(op.Value)
+}
+
 type BatchedResponse struct {
 	Results []Result `msg:"results"`
 }
@@ -51,14 +55,14 @@ const (
 	FAILURE
 )
 
-func (op ResultStatus) String() string {
-	switch op {
+func (status ResultStatus) String() string {
+	switch status {
 	case SUCCESS:
 		return "SUCCESS"
 	case FAILURE:
 		return "FAILURE"
 	default:
-		return strconv.Itoa(int(op))
+		return strconv.Itoa(int(status))
 	}
 }
 

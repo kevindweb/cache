@@ -280,3 +280,111 @@ func TestPing(t *testing.T) {
 		})
 	}
 }
+
+func TestDeduplication(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		batch          []protocol.Operation
+		wantOperations []protocol.Operation
+		wantIndex      map[int]int
+	}{
+		{
+			name: "duplicate operations",
+			batch: []protocol.Operation{
+				{
+					Type: protocol.GET,
+					Key:  []byte("hello"),
+				},
+				{
+					Type: protocol.GET,
+					Key:  []byte("hello"),
+				},
+				{
+					Type: protocol.DELETE,
+					Key:  []byte("key"),
+				},
+				{
+					Type:  protocol.SET,
+					Key:   []byte("bye"),
+					Value: []byte("set"),
+				},
+				{
+					Type: protocol.GET,
+					Key:  []byte("hello"),
+				},
+				{
+					Type: protocol.GET,
+					Key:  []byte("hello"),
+				},
+				{
+					Type:  protocol.SET,
+					Key:   []byte("bye"),
+					Value: []byte("set"),
+				},
+			},
+			wantOperations: []protocol.Operation{
+				{
+					Type: protocol.GET,
+					Key:  []byte("hello"),
+				},
+				{
+					Type: protocol.DELETE,
+					Key:  []byte("key"),
+				},
+				{
+					Type:  protocol.SET,
+					Key:   []byte("bye"),
+					Value: []byte("set"),
+				},
+			},
+			wantIndex: map[int]int{
+				0: 0,
+				1: 0,
+				2: 1,
+				3: 2,
+				4: 0,
+				5: 0,
+				6: 2,
+			},
+		},
+		{
+			name: "no duplicates",
+			batch: []protocol.Operation{
+				{
+					Type: protocol.DELETE,
+					Key:  []byte("hello"),
+				},
+				{
+					Type:  protocol.SET,
+					Key:   []byte("hello"),
+					Value: []byte("hi"),
+				},
+			},
+			wantOperations: []protocol.Operation{
+				{
+					Type: protocol.DELETE,
+					Key:  []byte("hello"),
+				},
+				{
+					Type:  protocol.SET,
+					Key:   []byte("hello"),
+					Value: []byte("hi"),
+				},
+			},
+			wantIndex: map[int]int{
+				0: 0,
+				1: 1,
+			},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotOperations, gotIndex := requestDeduplication(tc.batch)
+			require.Equal(t, tc.wantOperations, gotOperations)
+			require.Equal(t, tc.wantIndex, gotIndex)
+		})
+	}
+}

@@ -75,11 +75,14 @@ bench:
 bench/all:
 	go test ./... -bench=.
 
+.PHONY: generate
+generate:
+	go generate ./...
+
 ## build: build the application
 .PHONY: build
-build:
-	go generate ./...
-	go build -o=/tmp/bin/${BINARY_NAME} ${MAIN_PACKAGE_PATH}
+build: generate
+	go run examples/main.go
 
 ## run: run the  application
 .PHONY: run

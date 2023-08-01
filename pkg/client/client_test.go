@@ -287,7 +287,7 @@ func TestDeduplication(t *testing.T) {
 		name           string
 		batch          []protocol.Operation
 		wantOperations []protocol.Operation
-		wantIndex      map[int]int
+		wantIndex      map[int][]int
 	}{
 		{
 			name: "duplicate operations",
@@ -338,14 +338,10 @@ func TestDeduplication(t *testing.T) {
 					Value: []byte("set"),
 				},
 			},
-			wantIndex: map[int]int{
-				0: 0,
-				1: 0,
-				2: 1,
-				3: 2,
-				4: 0,
-				5: 0,
-				6: 2,
+			wantIndex: map[int][]int{
+				0: {0, 1, 4, 5},
+				1: {2},
+				2: {3, 6},
 			},
 		},
 		{
@@ -372,9 +368,9 @@ func TestDeduplication(t *testing.T) {
 					Value: []byte("hi"),
 				},
 			},
-			wantIndex: map[int]int{
-				0: 0,
-				1: 1,
+			wantIndex: map[int][]int{
+				0: {0},
+				1: {1},
 			},
 		},
 	}
